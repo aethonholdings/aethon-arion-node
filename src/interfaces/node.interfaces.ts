@@ -1,7 +1,7 @@
 import { SimulationFactory } from 'aethon-arion-pipeline';
 
 export interface NodeConfig {
-    id: string;
+    id?: string;
     host: string;
     port?: number;
     verbose?: boolean;

@@ -14,6 +14,7 @@
   "dependencies": {
     "aethon-arion-c1": "^0.2.0",
     "aethon-arion-pipeline": "^0.1.0",
+    "node-machine-id": "^1.1.12",
     "rxjs": "~7.8.1",
     "tslog": "^4.9.3",
     "xhr2": "^0.2.1"

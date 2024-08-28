@@ -29,12 +29,13 @@ import {
 } from "rxjs";
 import { NodeConfig } from "../interfaces/node.interfaces";
 import { Logger as TSLogger } from "tslog";
+import { machineIdSync } from "node-machine-id";
 
 export class Node {
     private _name: string = "Node";
     private _id: string;
     private _machineId: string;
-    private _processId: number;
+    private _instanceId: string;
     private _api: Api;
     private _saveStateSpace;
     private _loopObservable$: Observable<number>;
@@ -55,10 +56,10 @@ export class Node {
             this._console(logLine);
         });
         this._api = new Api({ hostname: config.host, port: config.port } as Environment, this._logger);
-        this._machineId = config.id;
-        this._processId = Math.floor(100000 + Math.random() * 900000);
-        this._id = this._machineId + ":" + this._processId;
-        this._log("Initialising node", { machineId: config.id });
+        (config?.id)? this._machineId = config.id : this._machineId = machineIdSync();
+        this._instanceId = (Math.floor(100000 + Math.random() * 900000)).toString();
+        this._id = this._machineId + ":" + this._instanceId;
+        this._log("Initialising node", { nodeId: this._id });
         config?.saveStateSpace ? (this._saveStateSpace = config.saveStateSpace) : (this._saveStateSpace = false);
         for (let factory of config.simulationFactories) {
             this._simulationFactories.set(factory.getName(), factory);
