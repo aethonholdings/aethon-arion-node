@@ -236,7 +236,7 @@ export class Node {
 
     private _getSeeds$(): Observable<number[] | null> {
         const endpoint: Endpoint = {
-            path: "/sim-config/seeds",
+            path: "/seeds",
             method: "GET",
             options: null
         };
