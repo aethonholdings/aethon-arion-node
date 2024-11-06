@@ -56,8 +56,8 @@ export class Node {
             this._console(logLine);
         });
         this._api = new Api({ hostname: config.host, port: config.port } as Environment, this._logger);
-        (config?.id)? this._machineId = config.id : this._machineId = machineIdSync();
-        this._instanceId = (Math.floor(100000 + Math.random() * 900000)).toString();
+        config?.id ? (this._machineId = config.id) : (this._machineId = machineIdSync());
+        this._instanceId = Math.floor(100000 + Math.random() * 900000).toString();
         this._id = this._machineId + ":" + this._instanceId;
         this._log("Initialising node", { nodeId: this._id });
         config?.saveStateSpace ? (this._saveStateSpace = config.saveStateSpace) : (this._saveStateSpace = false);
@@ -240,7 +240,7 @@ export class Node {
             method: "GET",
             options: null
         };
-        return this._api.request$(endpoint);
+        return this._api.request$(endpoint).pipe(map((response) => response.payload));
     }
 
     private _getNext$(): Observable<SimConfigDTO> {
@@ -251,7 +251,7 @@ export class Node {
                 query: { nodeId: this._id }
             }
         };
-        return this._api.request$(endpoint);
+        return this._api.request$(endpoint).pipe(map((response) => response.payload));
     }
 
     private _postResult$(result: ResultDTO): Observable<any> {

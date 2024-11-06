@@ -1,6 +1,6 @@
 {
   "name": "aethon-arion-node",
-  "version": "0.2.0",
+  "version": "0.2.1",
   "description": "The Arion data pipeline modelling computation node",
   "main": "./dist/main.js",
   "scripts": {
