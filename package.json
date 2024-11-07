@@ -6,7 +6,7 @@
   "scripts": {
     "start:dev": "tsc -w & nodemon -q -w dist dist/main.js",
     "start:test": "tsc & caffeinate node ./dist/main.js",
-    "build": "tsc & cp package.json README.md dist/",
+    "build": "tsc",
     "test": "ts-node node_modules/jasmine/bin/jasmine --config=./tests/jasmine.json --reporter=jasmine-console-reporter"
   },
   "author": "Konstantinos Dimitriou",
