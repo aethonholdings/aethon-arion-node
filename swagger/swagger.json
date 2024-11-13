@@ -1,0 +1,4086 @@
+{
+  "openapi": "3.0.0",
+  "paths": {
+    "/arion/sim-config": {
+      "get": {
+        "operationId": "SimConfigController_index",
+        "parameters": [
+          {
+            "name": "page",
+            "required": false,
+            "description": "The page number to retrieve.  If the query value is higher than the number of pages, the last page is returned.  If not provided or less than 1, the first page is returned.",
+            "in": "query",
+            "schema": {
+              "example": 2,
+              "type": "number"
+            }
+          },
+          {
+            "name": "limit",
+            "required": false,
+            "description": "The number of items to retrieve per page.  Will be capped at a server-set maximum value if higher",
+            "in": "query",
+            "schema": {
+              "example": 10,
+              "type": "number"
+            }
+          },
+          {
+            "name": "orderBy",
+            "required": false,
+            "description": "The order by clause to sort the results by; either 'ASC' or 'DESC'. If not provided, no sort is set.",
+            "in": "query",
+            "schema": {
+              "example": [
+                [
+                  "id",
+                  "ASC"
+                ]
+              ],
+              "type": "array",
+              "items": {
+                "type": "array"
+              }
+            }
+          },
+          {
+            "name": "where",
+            "required": false,
+            "description": "The where clause to filter the results by.  For each field listed, an AND operation is performed for equality against the values provided.  If no where clause is provided, all results are fetched.",
+            "in": "query",
+            "schema": {
+              "example": [
+                [
+                  "id",
+                  "12"
+                ]
+              ],
+              "type": "array",
+              "items": {
+                "type": "array"
+              }
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "A Paginated<SimConfig> object",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Paginated"
+                }
+              }
+            }
+          }
+        },
+        "tags": [
+          "SimConfig"
+        ]
+      },
+      "post": {
+        "operationId": "SimConfigController_create",
+        "parameters": [],
+        "requestBody": {
+          "required": true,
+          "description": "The parameters of the simulation to be created under the simulation set",
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/SimConfigDTOCreate"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "The SimConfig object created by the request",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/SimConfigDTOGet"
+                }
+              }
+            }
+          }
+        },
+        "tags": [
+          "SimConfig"
+        ]
+      }
+    },
+    "/arion/sim-config/next": {
+      "get": {
+        "operationId": "SimConfigController_next",
+        "parameters": [
+          {
+            "name": "nodeId",
+            "required": true,
+            "in": "query",
+            "description": "The identifier of the node requesting the next SimConfig",
+            "schema": {
+              "example": "e221a974cfc069b0b8ace096c1153ca3eb4707344ae50fe2f4529003fab2c4e2:649566",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "The next simconfig to be executed by a node",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/SimConfigDTOGet"
+                }
+              }
+            }
+          }
+        },
+        "tags": [
+          "SimConfig"
+        ]
+      }
+    },
+    "/arion/sim-config/{id}": {
+      "get": {
+        "operationId": "SimConfigController_view",
+        "parameters": [
+          {
+            "name": "id",
+            "required": true,
+            "in": "path",
+            "description": "The unique identifier of the SimConfig to be fetched",
+            "schema": {
+              "example": 1,
+              "type": "number"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "The SimConfig object fetched by ID",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/SimConfigDTOGet"
+                }
+              }
+            }
+          }
+        },
+        "tags": [
+          "SimConfig"
+        ]
+      },
+      "delete": {
+        "operationId": "SimConfigController_delete",
+        "parameters": [
+          {
+            "name": "id",
+            "required": true,
+            "in": "path",
+            "description": "The ID of the SimConfig to be deleted",
+            "schema": {
+              "example": 1,
+              "type": "number"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "The ID of the SimConfig deleted",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "number"
+                }
+              }
+            }
+          }
+        },
+        "tags": [
+          "SimConfig"
+        ]
+      }
+    },
+    "/arion/sim-config/{id}/result": {
+      "get": {
+        "operationId": "SimConfigController_results",
+        "parameters": [
+          {
+            "name": "id",
+            "required": true,
+            "in": "path",
+            "description": "The unique identifier of the SimConfig to fetch the results for",
+            "schema": {
+              "example": 1,
+              "type": "number"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "An array of Result objects for the specified simulation configuration",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "array",
+                  "items": {
+                    "$ref": "#/components/schemas/ResultDTOGet"
+                  }
+                }
+              }
+            }
+          }
+        },
+        "tags": [
+          "SimConfig"
+        ]
+      }
+    },
+    "/arion/result": {
+      "get": {
+        "operationId": "ResultController_index",
+        "parameters": [
+          {
+            "name": "page",
+            "required": false,
+            "description": "The page number to retrieve.  If the query value is higher than the number of pages, the last page is returned.  If not provided or less than 1, the first page is returned.",
+            "in": "query",
+            "schema": {
+              "example": 2,
+              "type": "number"
+            }
+          },
+          {
+            "name": "limit",
+            "required": false,
+            "description": "The number of items to retrieve per page.  Will be capped at a server-set maximum value if higher",
+            "in": "query",
+            "schema": {
+              "example": 10,
+              "type": "number"
+            }
+          },
+          {
+            "name": "orderBy",
+            "required": false,
+            "description": "The order by clause to sort the results by; either 'ASC' or 'DESC'. If not provided, no sort is set.",
+            "in": "query",
+            "schema": {
+              "example": [
+                [
+                  "id",
+                  "ASC"
+                ]
+              ],
+              "type": "array",
+              "items": {
+                "type": "array"
+              }
+            }
+          },
+          {
+            "name": "where",
+            "required": false,
+            "description": "The where clause to filter the results by.  For each field listed, an AND operation is performed for equality against the values provided.  If no where clause is provided, all results are fetched.",
+            "in": "query",
+            "schema": {
+              "example": [
+                [
+                  "id",
+                  "12"
+                ]
+              ],
+              "type": "array",
+              "items": {
+                "type": "array"
+              }
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "All result objects retrieved based on the search query given, paginated",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Paginated"
+                }
+              }
+            }
+          }
+        },
+        "tags": [
+          "Result"
+        ]
+      },
+      "post": {
+        "operationId": "ResultController_create",
+        "parameters": [],
+        "requestBody": {
+          "required": true,
+          "description": "The result to create",
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/ResultDTOCreate"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "The result object created",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ResultDTOGet"
+                }
+              }
+            }
+          }
+        },
+        "tags": [
+          "Result"
+        ]
+      }
+    },
+    "/arion/result/{id}": {
+      "get": {
+        "operationId": "ResultController_view",
+        "parameters": [
+          {
+            "name": "id",
+            "required": true,
+            "in": "path",
+            "description": "The unique identifier of the result to retrieve",
+            "schema": {
+              "example": 1,
+              "type": "number"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "The result object retrieved by ID",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ResultDTOGet"
+                }
+              }
+            }
+          }
+        },
+        "tags": [
+          "Result"
+        ]
+      }
+    },
+    "/arion/org-config": {
+      "get": {
+        "operationId": "OrgConfigController_index",
+        "parameters": [
+          {
+            "name": "type",
+            "required": false,
+            "in": "query",
+            "description": "Optional - filter OrgConfigurations by the type of model",
+            "schema": {
+              "example": "C1",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "An array of OrgConfig objects mathing the specified type, if supplied",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "array",
+                  "items": {
+                    "$ref": "#/components/schemas/OrgConfigDTOGet"
+                  }
+                }
+              }
+            }
+          }
+        },
+        "tags": [
+          "OrgConfig"
+        ]
+      },
+      "post": {
+        "operationId": "OrgConfigController_create",
+        "parameters": [],
+        "requestBody": {
+          "required": true,
+          "description": "The parameters required to generate the OrgConfig, based on the selected model Configurator class",
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/ConfiguratorParamsDTOCreate"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "The newly created OrgConfig object",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/OrgConfigDTOGet"
+                }
+              }
+            }
+          }
+        },
+        "tags": [
+          "OrgConfig"
+        ]
+      }
+    },
+    "/arion/org-config/{id}": {
+      "get": {
+        "operationId": "OrgConfigController_view",
+        "parameters": [
+          {
+            "name": "id",
+            "required": true,
+            "in": "path",
+            "description": "The ID of the OrgConfig to be fetched",
+            "schema": {
+              "example": 1,
+              "type": "number"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "The OrgConfig object matching the specified ID",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/OrgConfigDTOGet"
+                }
+              }
+            }
+          }
+        },
+        "tags": [
+          "OrgConfig"
+        ]
+      },
+      "delete": {
+        "operationId": "OrgConfigController_delete",
+        "parameters": [
+          {
+            "name": "id",
+            "required": true,
+            "in": "path",
+            "description": "The ID of the OrgConfig to be deleted",
+            "schema": {
+              "example": 1,
+              "type": "number"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "The ID of the OrgConfig deleted",
+            "example": 1,
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "number"
+                }
+              }
+            }
+          }
+        },
+        "tags": [
+          "OrgConfig"
+        ]
+      }
+    },
+    "/arion/sim-set": {
+      "get": {
+        "operationId": "SimSetController_index",
+        "parameters": [],
+        "responses": {
+          "200": {
+            "description": "An array of all simulation sets, subject to a query filter",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "array",
+                  "items": {
+                    "$ref": "#/components/schemas/SimSetDTOGet"
+                  }
+                }
+              }
+            }
+          }
+        },
+        "tags": [
+          "SimSet"
+        ]
+      },
+      "post": {
+        "operationId": "SimSetController_create",
+        "parameters": [],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/SimSetDTOCreate"
+              },
+              "examples": {
+                "example1": {
+                  "value": {
+                    "description": "Simulation set for testing the new model",
+                    "type": "C1"
+                  }
+                }
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "The newly created simulation set",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/SimSetDTOGet"
+                }
+              }
+            }
+          }
+        },
+        "tags": [
+          "SimSet"
+        ]
+      }
+    },
+    "/arion/sim-set/{id}": {
+      "get": {
+        "operationId": "SimSetController_view",
+        "parameters": [
+          {
+            "name": "id",
+            "required": true,
+            "in": "path",
+            "description": "The unique identifier of the simulation set",
+            "schema": {
+              "example": 1,
+              "type": "number"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "The details of the simulation set",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/SimSetDTOCreate"
+                }
+              }
+            }
+          }
+        },
+        "tags": [
+          "SimSet"
+        ]
+      },
+      "delete": {
+        "operationId": "SimSetController_delete",
+        "parameters": [
+          {
+            "name": "id",
+            "required": true,
+            "in": "path",
+            "description": "The unique identifier of the simulation set to be deleted",
+            "schema": {
+              "example": 1,
+              "type": "number"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "The ID of the simulation set deleted",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "number"
+                }
+              }
+            }
+          }
+        },
+        "tags": [
+          "SimSet"
+        ]
+      }
+    },
+    "/arion/sim-set/{id}/result": {
+      "get": {
+        "operationId": "SimSetController_results",
+        "parameters": [
+          {
+            "name": "page",
+            "required": false,
+            "description": "The page number to retrieve.  If the query value is higher than the number of pages, the last page is returned.  If not provided or less than 1, the first page is returned.",
+            "in": "path",
+            "schema": {
+              "example": 2,
+              "type": "number"
+            }
+          },
+          {
+            "name": "limit",
+            "required": false,
+            "description": "The number of items to retrieve per page.  Will be capped at a server-set maximum value if higher",
+            "in": "path",
+            "schema": {
+              "example": 10,
+              "type": "number"
+            }
+          },
+          {
+            "name": "orderBy",
+            "required": false,
+            "description": "The order by clause to sort the results by; either 'ASC' or 'DESC'. If not provided, no sort is set.",
+            "in": "path",
+            "schema": {
+              "example": [
+                [
+                  "id",
+                  "ASC"
+                ]
+              ],
+              "type": "array",
+              "items": {
+                "type": "array"
+              }
+            }
+          },
+          {
+            "name": "where",
+            "required": false,
+            "description": "The where clause to filter the results by.  For each field listed, an AND operation is performed for equality against the values provided.  If no where clause is provided, all results are fetched.",
+            "in": "path",
+            "schema": {
+              "example": [
+                [
+                  "id",
+                  "12"
+                ]
+              ],
+              "type": "array",
+              "items": {
+                "type": "array"
+              }
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "A Paginated<Result> object",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Paginated"
+                }
+              }
+            }
+          }
+        },
+        "tags": [
+          "SimSet"
+        ]
+      }
+    },
+    "/arion/sim-set/{id}/sim-config": {
+      "get": {
+        "operationId": "SimSetController_simConfigs",
+        "parameters": [
+          {
+            "name": "page",
+            "required": false,
+            "description": "The page number to retrieve.  If the query value is higher than the number of pages, the last page is returned.  If not provided or less than 1, the first page is returned.",
+            "in": "path",
+            "schema": {
+              "example": 2,
+              "type": "number"
+            }
+          },
+          {
+            "name": "limit",
+            "required": false,
+            "description": "The number of items to retrieve per page.  Will be capped at a server-set maximum value if higher",
+            "in": "path",
+            "schema": {
+              "example": 10,
+              "type": "number"
+            }
+          },
+          {
+            "name": "orderBy",
+            "required": false,
+            "description": "The order by clause to sort the results by; either 'ASC' or 'DESC'. If not provided, no sort is set.",
+            "in": "path",
+            "schema": {
+              "example": [
+                [
+                  "id",
+                  "ASC"
+                ]
+              ],
+              "type": "array",
+              "items": {
+                "type": "array"
+              }
+            }
+          },
+          {
+            "name": "where",
+            "required": false,
+            "description": "The where clause to filter the results by.  For each field listed, an AND operation is performed for equality against the values provided.  If no where clause is provided, all results are fetched.",
+            "in": "path",
+            "schema": {
+              "example": [
+                [
+                  "id",
+                  "12"
+                ]
+              ],
+              "type": "array",
+              "items": {
+                "type": "array"
+              }
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "A Paginated<SimConfig> object",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Paginated"
+                }
+              }
+            }
+          }
+        },
+        "tags": [
+          "SimSet"
+        ]
+      }
+    },
+    "/arion/state-space/{id}": {
+      "get": {
+        "operationId": "StateSpaceController_index",
+        "parameters": [
+          {
+            "name": "id",
+            "required": true,
+            "in": "path",
+            "description": "The id of the result to which the state space belongs",
+            "schema": {
+              "example": 1,
+              "type": "number"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": ""
+          }
+        },
+        "tags": [
+          "StateSpace"
+        ]
+      }
+    },
+    "/arion/seeds": {
+      "get": {
+        "operationId": "SeedsController_index",
+        "parameters": [],
+        "responses": {
+          "200": {
+            "description": "The static random number generator seeds for the simulation",
+            "example": [
+              21400376,
+              74768599,
+              76833774,
+              32500791,
+              43966213,
+              26668269,
+              64358422
+            ],
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "array",
+                  "items": {
+                    "$ref": "#/components/schemas/"
+                  }
+                },
+                "example": [
+                  21400376,
+                  74768599,
+                  76833774,
+                  32500791,
+                  43966213,
+                  26668269,
+                  64358422
+                ]
+              }
+            }
+          }
+        },
+        "tags": [
+          "Seeds"
+        ]
+      }
+    }
+  },
+  "info": {
+    "title": "Arion",
+    "description": "The Arion API description",
+    "version": "0.1",
+    "contact": {}
+  },
+  "tags": [
+    {
+      "name": "SimSet",
+      "description": ""
+    },
+    {
+      "name": "SimConfig",
+      "description": ""
+    },
+    {
+      "name": "OrgConfig",
+      "description": ""
+    },
+    {
+      "name": "Result",
+      "description": ""
+    },
+    {
+      "name": "StateSpace",
+      "description": ""
+    }
+  ],
+  "servers": [],
+  "components": {
+    "schemas": {
+      "Meta": {
+        "type": "object",
+        "properties": {
+          "itemsPerPage": {
+            "type": "number",
+            "description": "The metadata describing the position and size of the paginated data versus the full pagination set",
+            "example": 10
+          },
+          "totalItems": {
+            "type": "number",
+            "description": "The total number of items in the paginated data set",
+            "example": 100
+          },
+          "currentPage": {
+            "type": "number",
+            "description": "The current page number",
+            "example": 1
+          },
+          "totalPages": {
+            "type": "number",
+            "description": "The total number of pages in the paginated data set",
+            "example": 10
+          },
+          "orderBy": {
+            "description": "The order by clause for the paginated data set",
+            "example": [
+              [
+                "id",
+                "ASC"
+              ]
+            ],
+            "type": "array",
+            "items": {
+              "type": "array"
+            }
+          },
+          "where": {
+            "description": "The where clause for the paginated data set",
+            "example": [
+              [
+                "id",
+                "153"
+              ]
+            ],
+            "type": "array",
+            "items": {
+              "type": "array"
+            }
+          }
+        },
+        "required": [
+          "itemsPerPage",
+          "totalItems",
+          "currentPage",
+          "totalPages",
+          "orderBy",
+          "where"
+        ]
+      },
+      "Links": {
+        "type": "object",
+        "properties": {
+          "first": {
+            "type": "string",
+            "description": "The link to the first page",
+            "example": "http://localhost:3000/api/v1/users?page=1"
+          },
+          "previous": {
+            "type": "string",
+            "description": "The link to the previous page",
+            "example": "http://localhost:3000/api/v1/users?page=2"
+          },
+          "current": {
+            "type": "string",
+            "description": "The link to the current page",
+            "example": "http://localhost:3000/api/v1/users?page=3"
+          },
+          "next": {
+            "type": "string",
+            "description": "The link to the next page",
+            "example": "http://localhost:3000/api/v1/users?page=4"
+          },
+          "last": {
+            "type": "string",
+            "description": "The link to the last page",
+            "example": "http://localhost:3000/api/v1/users?page=10"
+          }
+        },
+        "required": [
+          "first",
+          "current",
+          "last"
+        ]
+      },
+      "Paginated": {
+        "type": "object",
+        "properties": {
+          "meta": {
+            "$ref": "#/components/schemas/Meta"
+          },
+          "data": {
+            "description": "The paginated data set of generic type T",
+            "example": [
+              {
+                "id": 1,
+                "name": "John Doe",
+                "email": "john@foo.org"
+              }
+            ],
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
+          },
+          "links": {
+            "description": "The links to the first, previous, current, next, and last pages",
+            "allOf": [
+              {
+                "$ref": "#/components/schemas/Links"
+              }
+            ]
+          }
+        },
+        "required": [
+          "meta",
+          "data",
+          "links"
+        ]
+      },
+      "SimConfigDTOGet": {
+        "type": "object",
+        "properties": {
+          "id": {
+            "type": "number",
+            "description": "The unique identifier of the simulation configuration",
+            "example": 1
+          },
+          "simSet": {
+            "type": "object",
+            "description": "The simulation set to which this simulation configuration belongs",
+            "example": {
+              "id": 1,
+              "description": "SimSet 1",
+              "type": "C1",
+              "state": "running",
+              "simConfigCount": 10,
+              "completedRunCount": 5,
+              "completedSimConfigCount": 5
+            }
+          },
+          "simSetId": {
+            "type": "number",
+            "description": "The unique identifier of the simulation set to generate a SimConfig for",
+            "example": 1
+          },
+          "orgConfig": {
+            "type": "object",
+            "description": "The organizational configuration for this simulation configuration",
+            "example": {
+              "id": 1,
+              "type": "C1",
+              "clockTickSeconds": 1,
+              "agentCount": 100,
+              "board": {},
+              "agentSet": {},
+              "plant": {},
+              "reporting": {},
+              "priorityIntensity": 1,
+              "influenceIntensity": 1,
+              "judgmentIntensity": 1,
+              "incentiveIntensity": 1,
+              "configuratorParams": {},
+              "configuratorName": "C1"
+            }
+          },
+          "orgConfigId": {
+            "type": "number",
+            "description": "The unique identifier of the OrgConfig to generate the simulation config for",
+            "example": 1
+          },
+          "runCount": {
+            "type": "number",
+            "description": "The number of runs executed for the simulation configuration",
+            "example": 4
+          },
+          "days": {
+            "type": "number",
+            "description": "The number of simulation 'days' to run the simulation for.",
+            "example": 100
+          },
+          "randomStreamType": {
+            "type": "string",
+            "enum": [
+              "static",
+              "random"
+            ],
+            "description": "The type of random stream to use for the simulation. 'static' uses a deterministic sequence from fixed random seeds and is useful for testing, 'random' uses Math.random().",
+            "example": "random"
+          },
+          "start": {
+            "format": "date-time",
+            "type": "string",
+            "description": "The start date and time of the simulation",
+            "example": "2021-01-01T00:00:00Z"
+          },
+          "end": {
+            "format": "date-time",
+            "type": "string",
+            "description": "The end date and time of the simulation",
+            "example": "2021-01-01T00:00:00Z"
+          },
+          "durationSec": {
+            "type": "number",
+            "description": "The duration of the simulation in seconds",
+            "example": 100
+          },
+          "avgPerformance": {
+            "type": "number",
+            "description": "The average performance across all results of the SimConfig",
+            "example": 9450.81
+          },
+          "stdDevPerformance": {
+            "type": "number",
+            "description": "The standard deviation of performance across all results of the SimConfig",
+            "example": 0.81
+          },
+          "entropy": {
+            "type": "number",
+            "description": "The entropy of the results of the simulation",
+            "example": 8.2
+          },
+          "results": {
+            "type": "object",
+            "description": "The results of the simulation"
+          }
+        },
+        "required": [
+          "id",
+          "simSet",
+          "simSetId",
+          "orgConfig",
+          "orgConfigId",
+          "runCount",
+          "start",
+          "end",
+          "durationSec",
+          "avgPerformance",
+          "stdDevPerformance",
+          "entropy"
+        ]
+      },
+      "StateSpacePointDTOCreate": {
+        "type": "object",
+        "properties": {
+          "clockTick": {
+            "type": "number",
+            "description": "The clock tick for which the state space point is recorded",
+            "example": 1
+          },
+          "board": {
+            "description": "The state of the Board",
+            "example": [
+              0,
+              0,
+              0,
+              1,
+              0,
+              0,
+              0,
+              0,
+              0,
+              0,
+              0,
+              0,
+              0,
+              0,
+              0,
+              0,
+              0,
+              0,
+              0,
+              0,
+              0,
+              0,
+              0,
+              0,
+              0,
+              0,
+              0,
+              1,
+              0,
+              0,
+              0,
+              0,
+              0,
+              0,
+              1,
+              1,
+              0,
+              0,
+              0,
+              0,
+              0,
+              1,
+              0,
+              0,
+              1,
+              0,
+              0,
+              0,
+              0,
+              0,
+              0,
+              0,
+              0,
+              0,
+              0,
+              0,
+              0,
+              0,
+              1,
+              1,
+              0,
+              0,
+              0,
+              0,
+              0,
+              0,
+              0,
+              0,
+              0,
+              0,
+              0,
+              1,
+              0,
+              0,
+              0,
+              0,
+              1,
+              0,
+              1,
+              0,
+              0,
+              1,
+              0,
+              0,
+              0,
+              0,
+              0,
+              0,
+              0,
+              1,
+              0
+            ],
+            "type": "array",
+            "items": {
+              "type": "number"
+            }
+          },
+          "agentStates": {
+            "description": "The state of the Agent Set",
+            "example": [
+              0,
+              0,
+              0,
+              1
+            ],
+            "type": "array",
+            "items": {
+              "type": "number"
+            }
+          },
+          "plant": {
+            "description": "The state of the Plant",
+            "example": [
+              0,
+              0,
+              0,
+              0,
+              0,
+              0,
+              0,
+              0
+            ],
+            "type": "array",
+            "items": {
+              "type": "number"
+            }
+          },
+          "reporting": {
+            "description": "The state of the Reporting System",
+            "example": [
+              0,
+              873600,
+              -873600,
+              91,
+              1,
+              1,
+              300,
+              9600
+            ],
+            "type": "array",
+            "items": {
+              "type": "number"
+            }
+          },
+          "priorityTensor": {
+            "description": "The priority tensor at this clock tick",
+            "items": {
+              "type": "array"
+            },
+            "type": "array"
+          }
+        },
+        "required": [
+          "clockTick",
+          "board",
+          "agentStates",
+          "plant",
+          "reporting",
+          "priorityTensor"
+        ]
+      },
+      "ConfiguratorParamsDTOGet": {
+        "type": "object",
+        "properties": {
+          "configuratorName": {
+            "type": "string",
+            "description": "The signature name of the Configurator to use for generating the OrgConfigs",
+            "example": "C1Configurator"
+          },
+          "data": {
+            "type": "object",
+            "description": "The data object containing the parameters for the model Configurator",
+            "example": {
+              "spans": 1,
+              "layers": 1,
+              "gains": {
+                "influence": 0.000001,
+                "judgment": 0.00001,
+                "incentive": 1e-8
+              },
+              "graph": "teams",
+              "actionStateProbability": 0.85,
+              "matrixInit": {
+                "influence": "null",
+                "judgment": "random",
+                "incentive": "purposeful"
+              },
+              "reporting": {
+                "unitPayroll": 1,
+                "unitPrice": 1
+              },
+              "board": {
+                "controlStep": false
+              }
+            }
+          }
+        },
+        "required": [
+          "configuratorName",
+          "data"
+        ]
+      },
+      "ResultDTOGet": {
+        "type": "object",
+        "properties": {
+          "id": {
+            "type": "number",
+            "description": "The unique identifier of the simulation result",
+            "example": 1
+          },
+          "simConfigId": {
+            "type": "number",
+            "description": "The unique identifier of the simulation configuration that produced this result",
+            "example": 1
+          },
+          "orgConfigId": {
+            "type": "number",
+            "description": "The ID of the organization configuration that produced this result",
+            "example": 1
+          },
+          "simSetId": {
+            "type": "number",
+            "description": "The unique identifier of the simulation set that produced this result",
+            "example": 1
+          },
+          "simConfig": {
+            "type": "object",
+            "description": "The simulation configuration that produced this result",
+            "example": {}
+          },
+          "runCount": {
+            "type": "number",
+            "description": "The run count of the simulation",
+            "example": 1
+          },
+          "nodeId": {
+            "type": "string",
+            "description": "The unique identifier of the node that produced this result",
+            "example": "e221a974cfc069b0b8ace096c1153ca3eb4707344ae50fe2f4529003fab2c4e2:649566"
+          },
+          "start": {
+            "format": "date-time",
+            "type": "string",
+            "description": "The start datetime stamp of the simulation",
+            "example": "2024-03-01T00:00:00.000Z"
+          },
+          "end": {
+            "format": "date-time",
+            "type": "string",
+            "description": "The end datetime stamp of the simulation",
+            "example": "2024-03-01T00:00:38.000Z"
+          },
+          "clockTick": {
+            "type": "number",
+            "description": "The clock tick of the simulation",
+            "example": 9599
+          },
+          "durationSec": {
+            "type": "number",
+            "description": "The computing time duration of the simulation in seconds",
+            "example": 38
+          },
+          "agentStates": {
+            "description": "The final state of the Agent Set",
+            "example": [
+              0,
+              0,
+              0,
+              1,
+              0,
+              0,
+              0,
+              0,
+              0,
+              0,
+              0,
+              0,
+              0,
+              0,
+              0,
+              0,
+              0,
+              0,
+              0,
+              0,
+              0,
+              0,
+              0,
+              0,
+              0,
+              0,
+              0,
+              1,
+              0,
+              0,
+              0,
+              0,
+              0,
+              0,
+              1,
+              1,
+              0,
+              0,
+              0,
+              0,
+              0,
+              1,
+              0,
+              0,
+              1,
+              0,
+              0,
+              0,
+              0,
+              0,
+              0,
+              0,
+              0,
+              0,
+              0,
+              0,
+              0,
+              0,
+              1,
+              1,
+              0,
+              0,
+              0,
+              0,
+              0,
+              0,
+              0,
+              0,
+              0,
+              0,
+              0,
+              1,
+              0,
+              0,
+              0,
+              0,
+              1,
+              0,
+              1,
+              0,
+              0,
+              1,
+              0,
+              0,
+              0,
+              0,
+              0,
+              0,
+              0,
+              1,
+              0
+            ],
+            "type": "array",
+            "items": {
+              "type": "number"
+            }
+          },
+          "board": {
+            "description": "The final state of the Board",
+            "example": [
+              436800,
+              436800,
+              0,
+              91,
+              1,
+              1,
+              300,
+              9600
+            ],
+            "type": "array",
+            "items": {
+              "type": "number"
+            }
+          },
+          "plant": {
+            "description": "The final state of the Plant",
+            "example": [
+              0,
+              0,
+              0,
+              0,
+              0,
+              0,
+              0,
+              0
+            ],
+            "type": "array",
+            "items": {
+              "type": "number"
+            }
+          },
+          "reporting": {
+            "description": "The final state of the Reporting System",
+            "example": [
+              0,
+              873600,
+              -873600,
+              91,
+              1,
+              1,
+              300,
+              9600
+            ],
+            "type": "array",
+            "items": {
+              "type": "number"
+            }
+          },
+          "priorityTensor": {
+            "description": "The final state of the priority tensor",
+            "example": [
+              [
+                [
+                  0.85,
+                  0.15
+                ],
+                [
+                  0.85,
+                  0.15
+                ]
+              ],
+              [
+                [
+                  0.85,
+                  0.15
+                ],
+                [
+                  0.85,
+                  0.15
+                ]
+              ],
+              [
+                [
+                  0.85,
+                  0.15
+                ],
+                [
+                  0.85,
+                  0.15
+                ]
+              ],
+              [
+                [
+                  0.85,
+                  0.15
+                ],
+                [
+                  0.85,
+                  0.15
+                ]
+              ],
+              [
+                [
+                  0.85,
+                  0.15
+                ],
+                [
+                  0.85,
+                  0.15
+                ]
+              ],
+              [
+                [
+                  0.85,
+                  0.15
+                ],
+                [
+                  0.85,
+                  0.15
+                ]
+              ],
+              [
+                [
+                  0.85,
+                  0.15
+                ],
+                [
+                  0.85,
+                  0.15
+                ]
+              ],
+              [
+                [
+                  0.85,
+                  0.15
+                ],
+                [
+                  0.85,
+                  0.15
+                ]
+              ],
+              [
+                [
+                  0.85,
+                  0.15
+                ],
+                [
+                  0.85,
+                  0.15
+                ]
+              ],
+              [
+                [
+                  0.85,
+                  0.15
+                ],
+                [
+                  0.85,
+                  0.15
+                ]
+              ],
+              [
+                [
+                  0.85,
+                  0.15
+                ],
+                [
+                  0.85,
+                  0.15
+                ]
+              ],
+              [
+                [
+                  0.85,
+                  0.15
+                ],
+                [
+                  0.85,
+                  0.15
+                ]
+              ],
+              [
+                [
+                  0.85,
+                  0.15
+                ],
+                [
+                  0.85,
+                  0.15
+                ]
+              ],
+              [
+                [
+                  0.85,
+                  0.15
+                ],
+                [
+                  0.85,
+                  0.15
+                ]
+              ],
+              [
+                [
+                  0.85,
+                  0.15
+                ],
+                [
+                  0.85,
+                  0.15
+                ]
+              ],
+              [
+                [
+                  0.85,
+                  0.15
+                ],
+                [
+                  0.85,
+                  0.15
+                ]
+              ],
+              [
+                [
+                  0.85,
+                  0.15
+                ],
+                [
+                  0.85,
+                  0.15
+                ]
+              ],
+              [
+                [
+                  0.85,
+                  0.15
+                ],
+                [
+                  0.85,
+                  0.15
+                ]
+              ],
+              [
+                [
+                  0.85,
+                  0.15
+                ],
+                [
+                  0.85,
+                  0.15
+                ]
+              ],
+              [
+                [
+                  0.85,
+                  0.15
+                ],
+                [
+                  0.85,
+                  0.15
+                ]
+              ],
+              [
+                [
+                  0.85,
+                  0.15
+                ],
+                [
+                  0.85,
+                  0.15
+                ]
+              ],
+              [
+                [
+                  0.85,
+                  0.15
+                ],
+                [
+                  0.85,
+                  0.15
+                ]
+              ],
+              [
+                [
+                  0.85,
+                  0.15
+                ],
+                [
+                  0.85,
+                  0.15
+                ]
+              ],
+              [
+                [
+                  0.85,
+                  0.15
+                ],
+                [
+                  0.85,
+                  0.15
+                ]
+              ],
+              [
+                [
+                  0.85,
+                  0.15
+                ],
+                [
+                  0.85,
+                  0.15
+                ]
+              ],
+              [
+                [
+                  0.85,
+                  0.15
+                ],
+                [
+                  0.85,
+                  0.15
+                ]
+              ],
+              [
+                [
+                  0.85,
+                  0.15
+                ],
+                [
+                  0.85,
+                  0.15
+                ]
+              ],
+              [
+                [
+                  0.85,
+                  0.15
+                ],
+                [
+                  0.85,
+                  0.15
+                ]
+              ],
+              [
+                [
+                  0.85,
+                  0.15
+                ],
+                [
+                  0.85,
+                  0.15
+                ]
+              ],
+              [
+                [
+                  0.85,
+                  0.15
+                ],
+                [
+                  0.85,
+                  0.15
+                ]
+              ],
+              [
+                [
+                  0.85,
+                  0.15
+                ],
+                [
+                  0.85,
+                  0.15
+                ]
+              ],
+              [
+                [
+                  0.85,
+                  0.15
+                ],
+                [
+                  0.85,
+                  0.15
+                ]
+              ],
+              [
+                [
+                  0.85,
+                  0.15
+                ],
+                [
+                  0.85,
+                  0.15
+                ]
+              ],
+              [
+                [
+                  0.85,
+                  0.15
+                ],
+                [
+                  0.85,
+                  0.15
+                ]
+              ],
+              [
+                [
+                  0.85,
+                  0.15
+                ],
+                [
+                  0.85,
+                  0.15
+                ]
+              ],
+              [
+                [
+                  0.85,
+                  0.15
+                ],
+                [
+                  0.85,
+                  0.15
+                ]
+              ],
+              [
+                [
+                  0.85,
+                  0.15
+                ],
+                [
+                  0.85,
+                  0.15
+                ]
+              ],
+              [
+                [
+                  0.85,
+                  0.15
+                ],
+                [
+                  0.85,
+                  0.15
+                ]
+              ],
+              [
+                [
+                  0.85,
+                  0.15
+                ],
+                [
+                  0.85,
+                  0.15
+                ]
+              ],
+              [
+                [
+                  0.85,
+                  0.15
+                ],
+                [
+                  0.85,
+                  0.15
+                ]
+              ],
+              [
+                [
+                  0.85,
+                  0.15
+                ],
+                [
+                  0.85,
+                  0.15
+                ]
+              ],
+              [
+                [
+                  0.85,
+                  0.15
+                ],
+                [
+                  0.85,
+                  0.15
+                ]
+              ],
+              [
+                [
+                  0.85,
+                  0.15
+                ],
+                [
+                  0.85,
+                  0.15
+                ]
+              ],
+              [
+                [
+                  0.85,
+                  0.15
+                ],
+                [
+                  0.85,
+                  0.15
+                ]
+              ],
+              [
+                [
+                  0.85,
+                  0.15
+                ],
+                [
+                  0.85,
+                  0.15
+                ]
+              ],
+              [
+                [
+                  0.85,
+                  0.15
+                ],
+                [
+                  0.85,
+                  0.15
+                ]
+              ],
+              [
+                [
+                  0.85,
+                  0.15
+                ],
+                [
+                  0.85,
+                  0.15
+                ]
+              ],
+              [
+                [
+                  0.85,
+                  0.15
+                ],
+                [
+                  0.85,
+                  0.15
+                ]
+              ],
+              [
+                [
+                  0.85,
+                  0.15
+                ],
+                [
+                  0.85,
+                  0.15
+                ]
+              ],
+              [
+                [
+                  0.85,
+                  0.15
+                ],
+                [
+                  0.85,
+                  0.15
+                ]
+              ],
+              [
+                [
+                  0.85,
+                  0.15
+                ],
+                [
+                  0.85,
+                  0.15
+                ]
+              ],
+              [
+                [
+                  0.85,
+                  0.15
+                ],
+                [
+                  0.85,
+                  0.15
+                ]
+              ],
+              [
+                [
+                  0.85,
+                  0.15
+                ],
+                [
+                  0.85,
+                  0.15
+                ]
+              ],
+              [
+                [
+                  0.85,
+                  0.15
+                ],
+                [
+                  0.85,
+                  0.15
+                ]
+              ],
+              [
+                [
+                  0.85,
+                  0.15
+                ],
+                [
+                  0.85,
+                  0.15
+                ]
+              ],
+              [
+                [
+                  0.85,
+                  0.15
+                ],
+                [
+                  0.85,
+                  0.15
+                ]
+              ],
+              [
+                [
+                  0.85,
+                  0.15
+                ],
+                [
+                  0.85,
+                  0.15
+                ]
+              ],
+              [
+                [
+                  0.85,
+                  0.15
+                ],
+                [
+                  0.85,
+                  0.15
+                ]
+              ],
+              [
+                [
+                  0.85,
+                  0.15
+                ],
+                [
+                  0.85,
+                  0.15
+                ]
+              ],
+              [
+                [
+                  0.85,
+                  0.15
+                ],
+                [
+                  0.85,
+                  0.15
+                ]
+              ],
+              [
+                [
+                  0.85,
+                  0.15
+                ],
+                [
+                  0.85,
+                  0.15
+                ]
+              ],
+              [
+                [
+                  0.85,
+                  0.15
+                ],
+                [
+                  0.85,
+                  0.15
+                ]
+              ],
+              [
+                [
+                  0.85,
+                  0.15
+                ],
+                [
+                  0.85,
+                  0.15
+                ]
+              ],
+              [
+                [
+                  0.85,
+                  0.15
+                ],
+                [
+                  0.85,
+                  0.15
+                ]
+              ],
+              [
+                [
+                  0.85,
+                  0.15
+                ],
+                [
+                  0.85,
+                  0.15
+                ]
+              ],
+              [
+                [
+                  0.85,
+                  0.15
+                ],
+                [
+                  0.85,
+                  0.15
+                ]
+              ],
+              [
+                [
+                  0.85,
+                  0.15
+                ],
+                [
+                  0.85,
+                  0.15
+                ]
+              ],
+              [
+                [
+                  0.85,
+                  0.15
+                ],
+                [
+                  0.85,
+                  0.15
+                ]
+              ],
+              [
+                [
+                  0.85,
+                  0.15
+                ],
+                [
+                  0.85,
+                  0.15
+                ]
+              ],
+              [
+                [
+                  0.85,
+                  0.15
+                ],
+                [
+                  0.85,
+                  0.15
+                ]
+              ],
+              [
+                [
+                  0.85,
+                  0.15
+                ],
+                [
+                  0.85,
+                  0.15
+                ]
+              ],
+              [
+                [
+                  0.85,
+                  0.15
+                ],
+                [
+                  0.85,
+                  0.15
+                ]
+              ],
+              [
+                [
+                  0.85,
+                  0.15
+                ],
+                [
+                  0.85,
+                  0.15
+                ]
+              ],
+              [
+                [
+                  0.85,
+                  0.15
+                ],
+                [
+                  0.85,
+                  0.15
+                ]
+              ],
+              [
+                [
+                  0.85,
+                  0.15
+                ],
+                [
+                  0.85,
+                  0.15
+                ]
+              ],
+              [
+                [
+                  0.85,
+                  0.15
+                ],
+                [
+                  0.85,
+                  0.15
+                ]
+              ],
+              [
+                [
+                  0.85,
+                  0.15
+                ],
+                [
+                  0.85,
+                  0.15
+                ]
+              ],
+              [
+                [
+                  0.85,
+                  0.15
+                ],
+                [
+                  0.85,
+                  0.15
+                ]
+              ],
+              [
+                [
+                  0.85,
+                  0.15
+                ],
+                [
+                  0.85,
+                  0.15
+                ]
+              ],
+              [
+                [
+                  0.85,
+                  0.15
+                ],
+                [
+                  0.85,
+                  0.15
+                ]
+              ],
+              [
+                [
+                  0.85,
+                  0.15
+                ],
+                [
+                  0.85,
+                  0.15
+                ]
+              ],
+              [
+                [
+                  0.85,
+                  0.15
+                ],
+                [
+                  0.85,
+                  0.15
+                ]
+              ],
+              [
+                [
+                  0.85,
+                  0.15
+                ],
+                [
+                  0.85,
+                  0.15
+                ]
+              ],
+              [
+                [
+                  0.85,
+                  0.15
+                ],
+                [
+                  0.85,
+                  0.15
+                ]
+              ],
+              [
+                [
+                  0.85,
+                  0.15
+                ],
+                [
+                  0.85,
+                  0.15
+                ]
+              ],
+              [
+                [
+                  0.85,
+                  0.15
+                ],
+                [
+                  0.85,
+                  0.15
+                ]
+              ],
+              [
+                [
+                  0.85,
+                  0.15
+                ],
+                [
+                  0.85,
+                  0.15
+                ]
+              ],
+              [
+                [
+                  0.85,
+                  0.15
+                ],
+                [
+                  0.85,
+                  0.15
+                ]
+              ],
+              [
+                [
+                  0.85,
+                  0.15
+                ],
+                [
+                  0.85,
+                  0.15
+                ]
+              ],
+              [
+                [
+                  0.85,
+                  0.15
+                ],
+                [
+                  0.85,
+                  0.15
+                ]
+              ],
+              [
+                [
+                  0.85,
+                  0.15
+                ],
+                [
+                  0.85,
+                  0.15
+                ]
+              ]
+            ],
+            "items": {
+              "type": "array"
+            },
+            "type": "array"
+          },
+          "stateSpace": {
+            "description": "The state space points of the simulation",
+            "example": [],
+            "allOf": [
+              {
+                "$ref": "#/components/schemas/StateSpacePointDTOCreate"
+              }
+            ]
+          },
+          "performance": {
+            "type": "number",
+            "description": "The value of the final performance metric of the result",
+            "example": 0.85
+          },
+          "priorityIntensity": {
+            "type": "number",
+            "description": "The sum of the squares of the values of the final priority tensor of the result",
+            "example": 0.85
+          },
+          "agentCount": {
+            "type": "number",
+            "description": "The number of agents in the simulation",
+            "example": 10
+          },
+          "orgConfigType": {
+            "type": "string",
+            "description": "The type of organization configuration that produced this result",
+            "example": "C1"
+          },
+          "configuratorName": {
+            "type": "string",
+            "description": "The name of the configurator that produced this result",
+            "example": "C1Configurator"
+          },
+          "configuratorParams": {
+            "description": "The parameters of the configurator that produced this result",
+            "example": {
+              "configuratorName": "C1Configurator",
+              "data": {
+                "spans": 1,
+                "layers": 1,
+                "gains": {
+                  "influence": 0.000001,
+                  "judgment": 0.00001,
+                  "incentive": 1e-8
+                },
+                "graph": "teams",
+                "actionStateProbability": 0.85,
+                "matrixInit": {
+                  "influence": "null",
+                  "judgment": "random",
+                  "incentive": "purposeful"
+                },
+                "reporting": {
+                  "unitPayroll": 1,
+                  "unitPrice": 1
+                },
+                "board": {
+                  "controlStep": false
+                }
+              }
+            },
+            "allOf": [
+              {
+                "$ref": "#/components/schemas/ConfiguratorParamsDTOGet"
+              }
+            ]
+          }
+        },
+        "required": [
+          "id",
+          "simConfigId",
+          "orgConfigId",
+          "simSetId",
+          "simConfig",
+          "runCount",
+          "nodeId",
+          "start",
+          "end",
+          "clockTick",
+          "durationSec",
+          "agentStates",
+          "board",
+          "plant",
+          "reporting",
+          "priorityTensor",
+          "configuratorParams"
+        ]
+      },
+      "SimConfigDTOCreate": {
+        "type": "object",
+        "properties": {
+          "simSetId": {
+            "type": "number",
+            "description": "The unique identifier of the simulation set to generate a SimConfig for",
+            "example": 1
+          },
+          "orgConfigId": {
+            "type": "number",
+            "description": "The unique identifier of the OrgConfig to generate the simulation config for",
+            "example": 1
+          },
+          "days": {
+            "type": "number",
+            "description": "The number of simulation 'days' to run the simulation for.",
+            "example": 100
+          },
+          "randomStreamType": {
+            "type": "string",
+            "enum": [
+              "static",
+              "random"
+            ],
+            "description": "The type of random stream to use for the simulation. 'static' uses a deterministic sequence from fixed random seeds and is useful for testing, 'random' uses Math.random().",
+            "example": "random"
+          }
+        },
+        "required": [
+          "simSetId",
+          "orgConfigId"
+        ]
+      },
+      "ResultDTOCreate": {
+        "type": "object",
+        "properties": {
+          "simConfigId": {
+            "type": "number",
+            "description": "The unique identifier of the simulation configuration that produced this result",
+            "example": 1
+          },
+          "runCount": {
+            "type": "number",
+            "description": "The run count of the simulation",
+            "example": 1
+          },
+          "nodeId": {
+            "type": "string",
+            "description": "The unique identifier of the node that produced this result",
+            "example": "e221a974cfc069b0b8ace096c1153ca3eb4707344ae50fe2f4529003fab2c4e2:649566"
+          },
+          "start": {
+            "format": "date-time",
+            "type": "string",
+            "description": "The start datetime stamp of the simulation",
+            "example": "2024-03-01T00:00:00.000Z"
+          },
+          "end": {
+            "format": "date-time",
+            "type": "string",
+            "description": "The end datetime stamp of the simulation",
+            "example": "2024-03-01T00:00:38.000Z"
+          },
+          "clockTick": {
+            "type": "number",
+            "description": "The clock tick of the simulation",
+            "example": 9599
+          },
+          "durationSec": {
+            "type": "number",
+            "description": "The computing time duration of the simulation in seconds",
+            "example": 38
+          },
+          "agentStates": {
+            "description": "The final state of the Agent Set",
+            "example": [
+              0,
+              0,
+              0,
+              1,
+              0,
+              0,
+              0,
+              0,
+              0,
+              0,
+              0,
+              0,
+              0,
+              0,
+              0,
+              0,
+              0,
+              0,
+              0,
+              0,
+              0,
+              0,
+              0,
+              0,
+              0,
+              0,
+              0,
+              1,
+              0,
+              0,
+              0,
+              0,
+              0,
+              0,
+              1,
+              1,
+              0,
+              0,
+              0,
+              0,
+              0,
+              1,
+              0,
+              0,
+              1,
+              0,
+              0,
+              0,
+              0,
+              0,
+              0,
+              0,
+              0,
+              0,
+              0,
+              0,
+              0,
+              0,
+              1,
+              1,
+              0,
+              0,
+              0,
+              0,
+              0,
+              0,
+              0,
+              0,
+              0,
+              0,
+              0,
+              1,
+              0,
+              0,
+              0,
+              0,
+              1,
+              0,
+              1,
+              0,
+              0,
+              1,
+              0,
+              0,
+              0,
+              0,
+              0,
+              0,
+              0,
+              1,
+              0
+            ],
+            "type": "array",
+            "items": {
+              "type": "number"
+            }
+          },
+          "board": {
+            "description": "The final state of the Board",
+            "example": [
+              436800,
+              436800,
+              0,
+              91,
+              1,
+              1,
+              300,
+              9600
+            ],
+            "type": "array",
+            "items": {
+              "type": "number"
+            }
+          },
+          "plant": {
+            "description": "The final state of the Plant",
+            "example": [
+              0,
+              0,
+              0,
+              0,
+              0,
+              0,
+              0,
+              0
+            ],
+            "type": "array",
+            "items": {
+              "type": "number"
+            }
+          },
+          "reporting": {
+            "description": "The final state of the Reporting System",
+            "example": [
+              0,
+              873600,
+              -873600,
+              91,
+              1,
+              1,
+              300,
+              9600
+            ],
+            "type": "array",
+            "items": {
+              "type": "number"
+            }
+          },
+          "priorityTensor": {
+            "description": "The final state of the priority tensor",
+            "example": [
+              [
+                [
+                  0.85,
+                  0.15
+                ],
+                [
+                  0.85,
+                  0.15
+                ]
+              ],
+              [
+                [
+                  0.85,
+                  0.15
+                ],
+                [
+                  0.85,
+                  0.15
+                ]
+              ],
+              [
+                [
+                  0.85,
+                  0.15
+                ],
+                [
+                  0.85,
+                  0.15
+                ]
+              ],
+              [
+                [
+                  0.85,
+                  0.15
+                ],
+                [
+                  0.85,
+                  0.15
+                ]
+              ],
+              [
+                [
+                  0.85,
+                  0.15
+                ],
+                [
+                  0.85,
+                  0.15
+                ]
+              ],
+              [
+                [
+                  0.85,
+                  0.15
+                ],
+                [
+                  0.85,
+                  0.15
+                ]
+              ],
+              [
+                [
+                  0.85,
+                  0.15
+                ],
+                [
+                  0.85,
+                  0.15
+                ]
+              ],
+              [
+                [
+                  0.85,
+                  0.15
+                ],
+                [
+                  0.85,
+                  0.15
+                ]
+              ],
+              [
+                [
+                  0.85,
+                  0.15
+                ],
+                [
+                  0.85,
+                  0.15
+                ]
+              ],
+              [
+                [
+                  0.85,
+                  0.15
+                ],
+                [
+                  0.85,
+                  0.15
+                ]
+              ],
+              [
+                [
+                  0.85,
+                  0.15
+                ],
+                [
+                  0.85,
+                  0.15
+                ]
+              ],
+              [
+                [
+                  0.85,
+                  0.15
+                ],
+                [
+                  0.85,
+                  0.15
+                ]
+              ],
+              [
+                [
+                  0.85,
+                  0.15
+                ],
+                [
+                  0.85,
+                  0.15
+                ]
+              ],
+              [
+                [
+                  0.85,
+                  0.15
+                ],
+                [
+                  0.85,
+                  0.15
+                ]
+              ],
+              [
+                [
+                  0.85,
+                  0.15
+                ],
+                [
+                  0.85,
+                  0.15
+                ]
+              ],
+              [
+                [
+                  0.85,
+                  0.15
+                ],
+                [
+                  0.85,
+                  0.15
+                ]
+              ],
+              [
+                [
+                  0.85,
+                  0.15
+                ],
+                [
+                  0.85,
+                  0.15
+                ]
+              ],
+              [
+                [
+                  0.85,
+                  0.15
+                ],
+                [
+                  0.85,
+                  0.15
+                ]
+              ],
+              [
+                [
+                  0.85,
+                  0.15
+                ],
+                [
+                  0.85,
+                  0.15
+                ]
+              ],
+              [
+                [
+                  0.85,
+                  0.15
+                ],
+                [
+                  0.85,
+                  0.15
+                ]
+              ],
+              [
+                [
+                  0.85,
+                  0.15
+                ],
+                [
+                  0.85,
+                  0.15
+                ]
+              ],
+              [
+                [
+                  0.85,
+                  0.15
+                ],
+                [
+                  0.85,
+                  0.15
+                ]
+              ],
+              [
+                [
+                  0.85,
+                  0.15
+                ],
+                [
+                  0.85,
+                  0.15
+                ]
+              ],
+              [
+                [
+                  0.85,
+                  0.15
+                ],
+                [
+                  0.85,
+                  0.15
+                ]
+              ],
+              [
+                [
+                  0.85,
+                  0.15
+                ],
+                [
+                  0.85,
+                  0.15
+                ]
+              ],
+              [
+                [
+                  0.85,
+                  0.15
+                ],
+                [
+                  0.85,
+                  0.15
+                ]
+              ],
+              [
+                [
+                  0.85,
+                  0.15
+                ],
+                [
+                  0.85,
+                  0.15
+                ]
+              ],
+              [
+                [
+                  0.85,
+                  0.15
+                ],
+                [
+                  0.85,
+                  0.15
+                ]
+              ],
+              [
+                [
+                  0.85,
+                  0.15
+                ],
+                [
+                  0.85,
+                  0.15
+                ]
+              ],
+              [
+                [
+                  0.85,
+                  0.15
+                ],
+                [
+                  0.85,
+                  0.15
+                ]
+              ],
+              [
+                [
+                  0.85,
+                  0.15
+                ],
+                [
+                  0.85,
+                  0.15
+                ]
+              ],
+              [
+                [
+                  0.85,
+                  0.15
+                ],
+                [
+                  0.85,
+                  0.15
+                ]
+              ],
+              [
+                [
+                  0.85,
+                  0.15
+                ],
+                [
+                  0.85,
+                  0.15
+                ]
+              ],
+              [
+                [
+                  0.85,
+                  0.15
+                ],
+                [
+                  0.85,
+                  0.15
+                ]
+              ],
+              [
+                [
+                  0.85,
+                  0.15
+                ],
+                [
+                  0.85,
+                  0.15
+                ]
+              ],
+              [
+                [
+                  0.85,
+                  0.15
+                ],
+                [
+                  0.85,
+                  0.15
+                ]
+              ],
+              [
+                [
+                  0.85,
+                  0.15
+                ],
+                [
+                  0.85,
+                  0.15
+                ]
+              ],
+              [
+                [
+                  0.85,
+                  0.15
+                ],
+                [
+                  0.85,
+                  0.15
+                ]
+              ],
+              [
+                [
+                  0.85,
+                  0.15
+                ],
+                [
+                  0.85,
+                  0.15
+                ]
+              ],
+              [
+                [
+                  0.85,
+                  0.15
+                ],
+                [
+                  0.85,
+                  0.15
+                ]
+              ],
+              [
+                [
+                  0.85,
+                  0.15
+                ],
+                [
+                  0.85,
+                  0.15
+                ]
+              ],
+              [
+                [
+                  0.85,
+                  0.15
+                ],
+                [
+                  0.85,
+                  0.15
+                ]
+              ],
+              [
+                [
+                  0.85,
+                  0.15
+                ],
+                [
+                  0.85,
+                  0.15
+                ]
+              ],
+              [
+                [
+                  0.85,
+                  0.15
+                ],
+                [
+                  0.85,
+                  0.15
+                ]
+              ],
+              [
+                [
+                  0.85,
+                  0.15
+                ],
+                [
+                  0.85,
+                  0.15
+                ]
+              ],
+              [
+                [
+                  0.85,
+                  0.15
+                ],
+                [
+                  0.85,
+                  0.15
+                ]
+              ],
+              [
+                [
+                  0.85,
+                  0.15
+                ],
+                [
+                  0.85,
+                  0.15
+                ]
+              ],
+              [
+                [
+                  0.85,
+                  0.15
+                ],
+                [
+                  0.85,
+                  0.15
+                ]
+              ],
+              [
+                [
+                  0.85,
+                  0.15
+                ],
+                [
+                  0.85,
+                  0.15
+                ]
+              ],
+              [
+                [
+                  0.85,
+                  0.15
+                ],
+                [
+                  0.85,
+                  0.15
+                ]
+              ],
+              [
+                [
+                  0.85,
+                  0.15
+                ],
+                [
+                  0.85,
+                  0.15
+                ]
+              ],
+              [
+                [
+                  0.85,
+                  0.15
+                ],
+                [
+                  0.85,
+                  0.15
+                ]
+              ],
+              [
+                [
+                  0.85,
+                  0.15
+                ],
+                [
+                  0.85,
+                  0.15
+                ]
+              ],
+              [
+                [
+                  0.85,
+                  0.15
+                ],
+                [
+                  0.85,
+                  0.15
+                ]
+              ],
+              [
+                [
+                  0.85,
+                  0.15
+                ],
+                [
+                  0.85,
+                  0.15
+                ]
+              ],
+              [
+                [
+                  0.85,
+                  0.15
+                ],
+                [
+                  0.85,
+                  0.15
+                ]
+              ],
+              [
+                [
+                  0.85,
+                  0.15
+                ],
+                [
+                  0.85,
+                  0.15
+                ]
+              ],
+              [
+                [
+                  0.85,
+                  0.15
+                ],
+                [
+                  0.85,
+                  0.15
+                ]
+              ],
+              [
+                [
+                  0.85,
+                  0.15
+                ],
+                [
+                  0.85,
+                  0.15
+                ]
+              ],
+              [
+                [
+                  0.85,
+                  0.15
+                ],
+                [
+                  0.85,
+                  0.15
+                ]
+              ],
+              [
+                [
+                  0.85,
+                  0.15
+                ],
+                [
+                  0.85,
+                  0.15
+                ]
+              ],
+              [
+                [
+                  0.85,
+                  0.15
+                ],
+                [
+                  0.85,
+                  0.15
+                ]
+              ],
+              [
+                [
+                  0.85,
+                  0.15
+                ],
+                [
+                  0.85,
+                  0.15
+                ]
+              ],
+              [
+                [
+                  0.85,
+                  0.15
+                ],
+                [
+                  0.85,
+                  0.15
+                ]
+              ],
+              [
+                [
+                  0.85,
+                  0.15
+                ],
+                [
+                  0.85,
+                  0.15
+                ]
+              ],
+              [
+                [
+                  0.85,
+                  0.15
+                ],
+                [
+                  0.85,
+                  0.15
+                ]
+              ],
+              [
+                [
+                  0.85,
+                  0.15
+                ],
+                [
+                  0.85,
+                  0.15
+                ]
+              ],
+              [
+                [
+                  0.85,
+                  0.15
+                ],
+                [
+                  0.85,
+                  0.15
+                ]
+              ],
+              [
+                [
+                  0.85,
+                  0.15
+                ],
+                [
+                  0.85,
+                  0.15
+                ]
+              ],
+              [
+                [
+                  0.85,
+                  0.15
+                ],
+                [
+                  0.85,
+                  0.15
+                ]
+              ],
+              [
+                [
+                  0.85,
+                  0.15
+                ],
+                [
+                  0.85,
+                  0.15
+                ]
+              ],
+              [
+                [
+                  0.85,
+                  0.15
+                ],
+                [
+                  0.85,
+                  0.15
+                ]
+              ],
+              [
+                [
+                  0.85,
+                  0.15
+                ],
+                [
+                  0.85,
+                  0.15
+                ]
+              ],
+              [
+                [
+                  0.85,
+                  0.15
+                ],
+                [
+                  0.85,
+                  0.15
+                ]
+              ],
+              [
+                [
+                  0.85,
+                  0.15
+                ],
+                [
+                  0.85,
+                  0.15
+                ]
+              ],
+              [
+                [
+                  0.85,
+                  0.15
+                ],
+                [
+                  0.85,
+                  0.15
+                ]
+              ],
+              [
+                [
+                  0.85,
+                  0.15
+                ],
+                [
+                  0.85,
+                  0.15
+                ]
+              ],
+              [
+                [
+                  0.85,
+                  0.15
+                ],
+                [
+                  0.85,
+                  0.15
+                ]
+              ],
+              [
+                [
+                  0.85,
+                  0.15
+                ],
+                [
+                  0.85,
+                  0.15
+                ]
+              ],
+              [
+                [
+                  0.85,
+                  0.15
+                ],
+                [
+                  0.85,
+                  0.15
+                ]
+              ],
+              [
+                [
+                  0.85,
+                  0.15
+                ],
+                [
+                  0.85,
+                  0.15
+                ]
+              ],
+              [
+                [
+                  0.85,
+                  0.15
+                ],
+                [
+                  0.85,
+                  0.15
+                ]
+              ],
+              [
+                [
+                  0.85,
+                  0.15
+                ],
+                [
+                  0.85,
+                  0.15
+                ]
+              ],
+              [
+                [
+                  0.85,
+                  0.15
+                ],
+                [
+                  0.85,
+                  0.15
+                ]
+              ],
+              [
+                [
+                  0.85,
+                  0.15
+                ],
+                [
+                  0.85,
+                  0.15
+                ]
+              ],
+              [
+                [
+                  0.85,
+                  0.15
+                ],
+                [
+                  0.85,
+                  0.15
+                ]
+              ],
+              [
+                [
+                  0.85,
+                  0.15
+                ],
+                [
+                  0.85,
+                  0.15
+                ]
+              ],
+              [
+                [
+                  0.85,
+                  0.15
+                ],
+                [
+                  0.85,
+                  0.15
+                ]
+              ],
+              [
+                [
+                  0.85,
+                  0.15
+                ],
+                [
+                  0.85,
+                  0.15
+                ]
+              ],
+              [
+                [
+                  0.85,
+                  0.15
+                ],
+                [
+                  0.85,
+                  0.15
+                ]
+              ],
+              [
+                [
+                  0.85,
+                  0.15
+                ],
+                [
+                  0.85,
+                  0.15
+                ]
+              ]
+            ],
+            "items": {
+              "type": "array"
+            },
+            "type": "array"
+          },
+          "stateSpace": {
+            "description": "The state space points of the simulation",
+            "example": [],
+            "allOf": [
+              {
+                "$ref": "#/components/schemas/StateSpacePointDTOCreate"
+              }
+            ]
+          }
+        },
+        "required": [
+          "simConfigId",
+          "runCount",
+          "nodeId",
+          "start",
+          "end",
+          "clockTick",
+          "durationSec",
+          "agentStates",
+          "board",
+          "plant",
+          "reporting",
+          "priorityTensor"
+        ]
+      },
+      "OrgConfigDTOGet": {
+        "type": "object",
+        "properties": {
+          "id": {
+            "type": "number",
+            "description": "The unique identifier of the organization configuration",
+            "example": 1
+          },
+          "type": {
+            "type": "string",
+            "description": "The type of model for the organization configuration",
+            "example": "C1"
+          },
+          "clockTickSeconds": {
+            "type": "number",
+            "description": "The number of seconds per simulation clock tick",
+            "example": 300
+          },
+          "agentCount": {
+            "type": "number",
+            "description": "The number of agents in the organization",
+            "example": 10
+          },
+          "board": {
+            "type": "object",
+            "description": "The board configuration tensor for the organization",
+            "example": {
+              "controlStep": false
+            }
+          },
+          "agentSet": {
+            "type": "object",
+            "description": "The agent set configuration tensors for the organization",
+            "example": {
+              "priorityTensor": [
+                [
+                  [
+                    0.85,
+                    0.15000000000000002
+                  ],
+                  [
+                    0.85,
+                    0.15000000000000002
+                  ]
+                ]
+              ],
+              "influenceTensor": [
+                [
+                  [
+                    [
+                      0,
+                      0
+                    ],
+                    [
+                      0,
+                      0
+                    ]
+                  ]
+                ]
+              ],
+              "judgmentTensor": [
+                [
+                  [
+                    [
+                      0
+                    ],
+                    [
+                      0
+                    ]
+                  ],
+                  [
+                    [
+                      0
+                    ],
+                    [
+                      0
+                    ]
+                  ]
+                ]
+              ],
+              "incentiveTensor": [
+                [
+                  [
+                    [
+                      0,
+                      0,
+                      0,
+                      0,
+                      0,
+                      0,
+                      0,
+                      0
+                    ],
+                    [
+                      0,
+                      0,
+                      0,
+                      0,
+                      0,
+                      0,
+                      0,
+                      0
+                    ]
+                  ],
+                  [
+                    [
+                      0,
+                      0,
+                      0,
+                      0,
+                      0,
+                      0,
+                      0,
+                      0
+                    ],
+                    [
+                      0,
+                      0,
+                      0,
+                      0,
+                      0,
+                      0,
+                      0,
+                      0
+                    ]
+                  ]
+                ]
+              ]
+            }
+          },
+          "plant": {
+            "type": "object",
+            "description": "The plant configuration tensor for the organization",
+            "example": {
+              "initialState": [
+                0
+              ],
+              "graph": [
+                [
+                  0
+                ]
+              ]
+            }
+          },
+          "reporting": {
+            "type": "object",
+            "description": "The reporting tensor for the organization",
+            "example": {
+              "unitPrice": 1,
+              "unitPayroll": 1
+            }
+          },
+          "priorityIntensity": {
+            "type": "number",
+            "description": "The sum of the squares of all elements in the priority tensor",
+            "example": 0.85
+          },
+          "influenceIntensity": {
+            "type": "number",
+            "description": "The sum of the squares of all elements in the influence tensor",
+            "example": 0
+          },
+          "judgmentIntensity": {
+            "type": "number",
+            "description": "The sum of the squares of all elements in the judgment tensor",
+            "example": 0
+          },
+          "incentiveIntensity": {
+            "type": "number",
+            "description": "The sum of the squares of all elements in the incentive tensor",
+            "example": 0
+          },
+          "configuratorParams": {
+            "type": "object",
+            "description": "The parameters used to generate the organization configuration",
+            "example": {
+              "board": {
+                "controlStep": false
+              },
+              "gains": {
+                "judgment": 0.00001,
+                "incentive": 1e-8,
+                "influence": 0.000001
+              },
+              "graph": "teams",
+              "spans": 1,
+              "layers": 1,
+              "reporting": {
+                "unitPrice": 1,
+                "unitPayroll": 1
+              },
+              "matrixInit": {
+                "judgment": "random",
+                "incentive": "purposeful",
+                "influence": "null"
+              },
+              "actionStateProbability": 0.85
+            }
+          },
+          "simConfigs": {
+            "description": "The simulation configurations for the organization",
+            "example": [],
+            "type": "array",
+            "items": {
+              "type": "object"
+            }
+          },
+          "configuratorName": {
+            "type": "string",
+            "description": "The name of the configurator class used to generate the organization configuration",
+            "example": "C1Configurator"
+          }
+        },
+        "required": [
+          "id",
+          "type",
+          "clockTickSeconds",
+          "agentCount",
+          "board",
+          "agentSet",
+          "plant",
+          "reporting",
+          "priorityIntensity",
+          "influenceIntensity",
+          "judgmentIntensity",
+          "incentiveIntensity",
+          "configuratorParams"
+        ]
+      },
+      "ConfiguratorParamsDTOCreate": {
+        "type": "object",
+        "properties": {
+          "configuratorName": {
+            "type": "string",
+            "description": "The signature name of the Configurator to use for generating the OrgConfigs",
+            "example": "C1Configurator"
+          },
+          "data": {
+            "type": "object",
+            "description": "The data object containing the parameters for the model Configurator",
+            "example": {
+              "spans": 1,
+              "layers": 1,
+              "gains": {
+                "influence": 0.000001,
+                "judgment": 0.00001,
+                "incentive": 1e-8
+              },
+              "graph": "teams",
+              "actionStateProbability": 0.85,
+              "matrixInit": {
+                "influence": "null",
+                "judgment": "random",
+                "incentive": "purposeful"
+              },
+              "reporting": {
+                "unitPayroll": 1,
+                "unitPrice": 1
+              },
+              "board": {
+                "controlStep": false
+              }
+            }
+          }
+        },
+        "required": [
+          "configuratorName",
+          "data"
+        ]
+      },
+      "SimSetDTOGet": {
+        "type": "object",
+        "properties": {
+          "id": {
+            "type": "number",
+            "description": "The unique identifier of the simulation set",
+            "example": "1"
+          },
+          "description": {
+            "type": "string",
+            "description": "Text description of the simulation set",
+            "example": "Here is a test description"
+          },
+          "type": {
+            "type": "string",
+            "description": "The signature of the organisation model for which the simulation set is run",
+            "example": "C1"
+          },
+          "simConfigs": {
+            "description": "The simulation configurations for the simulation set",
+            "type": "array",
+            "items": {
+              "type": "object"
+            }
+          },
+          "state": {
+            "type": "string",
+            "description": "The current state of the simulation set",
+            "example": "running"
+          },
+          "runCount": {
+            "type": "number",
+            "description": "The number of simConfigs in the simulation set",
+            "example": 10
+          },
+          "completedRunCount": {
+            "type": "number",
+            "description": "The number of runs completed in the simulation set",
+            "example": 5
+          },
+          "completedSimConfigCount": {
+            "type": "number",
+            "description": "The number of simulation configurations completed in the simulation set",
+            "example": 5
+          }
+        },
+        "required": [
+          "id",
+          "description",
+          "type",
+          "simConfigs",
+          "state",
+          "runCount",
+          "completedRunCount",
+          "completedSimConfigCount"
+        ]
+      },
+      "SimSetDTOCreate": {
+        "type": "object",
+        "properties": {
+          "description": {
+            "type": "string",
+            "description": "Text description of the simulation set",
+            "example": "Here is a test description"
+          },
+          "type": {
+            "type": "string",
+            "description": "The signature of the organisation model for which the simulation set is run",
+            "example": "C1"
+          }
+        },
+        "required": [
+          "description",
+          "type"
+        ]
+      }
+    }
+  }
+}

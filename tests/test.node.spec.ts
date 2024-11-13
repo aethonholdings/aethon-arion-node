@@ -5,9 +5,11 @@ import { RandomStreamFactory, ResultDTO } from "aethon-arion-pipeline";
 import { simpleC1SimulationConfig } from "./init/test.init.simconfig";
 import { C1Simulation } from "aethon-arion-c1";
 import { LogLine } from "../../core/dist/interfaces/interfaces";
+import { C1Model } from "aethon-arion-c1/dist/classes/c1-model.class";
 
 export function runSimulationTest(description: string, nodeConfig: NodeConfig) {
     let node: Node;
+    const model: C1Model = new C1Model([]);
     const runIterations = 1;
     const verbose: boolean = true;
 
@@ -19,14 +21,14 @@ export function runSimulationTest(description: string, nodeConfig: NodeConfig) {
         });
 
         it("creates a new node", () => {
-            node = new Node(nodeConfig);
+            node = new Node(nodeConfig, [model]);
             expect(node).toBeTruthy();
             expect(node).toBeInstanceOf(Node);
             if (nodeConfig.verbose) {
                 node.getLog$().subscribe((logLine: LogLine) => {
                     console.log(logLine);
                 });
-            }            
+            }
         });
 
         it("initialises random stream factory, connects to the server and fetches seeds", async () => {

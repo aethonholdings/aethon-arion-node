@@ -7,12 +7,10 @@ import {
     StepOutput,
     LogLine,
     Api,
-    Endpoint,
-    Environment,
     ResultDTO,
     SimConfigDTO,
-    SimulationFactory,
-    StateSpacePointDTO
+    StateSpacePointDTO,
+    Model
 } from "aethon-arion-pipeline";
 import {
     Observable,
@@ -25,11 +23,14 @@ import {
     mergeMap,
     of,
     reduce,
-    switchMap
+    switchMap,
+    tap
 } from "rxjs";
 import { NodeConfig } from "../interfaces/node.interfaces";
 import { Logger as TSLogger } from "tslog";
 import { machineIdSync } from "node-machine-id";
+import { API, APIRequestOptions } from "aethon-api-types";
+import openApi from "../../swagger/swagger.json";
 
 export class Node {
     private _name: string = "Node";
@@ -40,7 +41,6 @@ export class Node {
     private _saveStateSpace;
     private _loopObservable$: Observable<number>;
     private _loopInterval: number;
-    private _simulationFactories: Map<string, SimulationFactory> = new Map<string, SimulationFactory>();
     private _logger: Logger;
     private _randomStreamFactory: RandomStreamFactory | undefined;
     private _verbose: boolean;
@@ -48,22 +48,24 @@ export class Node {
     private _tsLogger = new TSLogger();
     private _counter: number = 0;
     private _counterDiv: number = 1000;
+    private _models: Model[];
 
-    constructor(config: NodeConfig) {
+    constructor(config: NodeConfig, models: Model[]) {
         this._verbose = config?.verbose ? true : false;
         this._logger = new Logger();
         this._logger.getObservable$().subscribe((logLine: LogLine) => {
             this._console(logLine);
         });
-        this._api = new Api({ hostname: config.host, port: config.port } as Environment, this._logger);
+        this._api = new Api(
+            new API(config.protocol || "http", config.host, openApi, config.port, config.basePath),
+            this._logger
+        );
         config?.id ? (this._machineId = config.id) : (this._machineId = machineIdSync());
+        this._models = models;
         this._instanceId = Math.floor(100000 + Math.random() * 900000).toString();
         this._id = this._machineId + ":" + this._instanceId;
         this._log("Initialising node", { nodeId: this._id });
         config?.saveStateSpace ? (this._saveStateSpace = config.saveStateSpace) : (this._saveStateSpace = false);
-        for (let factory of config.simulationFactories) {
-            this._simulationFactories.set(factory.getName(), factory);
-        }
         this._loopInterval = config.loopInterval;
         this._loopObservable$ = interval(this._loopInterval);
         this._log("Node initialised");
@@ -124,7 +126,9 @@ export class Node {
                                 randomStreamType: response.randomStreamType,
                                 orgConfig: response.orgConfig
                             } as SimulationConfig;
-                            const simulationFactory = this._simulationFactories.get(response.orgConfig.type);
+                            const simulationFactory = this._models
+                                .find((model) => model.getName() === response.orgConfig?.type)
+                                ?.getSimulationFactory();
                             if (!simulationFactory) {
                                 this._logger.error({
                                     sourceObject: this._name,
@@ -235,34 +239,17 @@ export class Node {
     }
 
     private _getSeeds$(): Observable<number[] | null> {
-        const endpoint: Endpoint = {
-            path: "/seeds",
-            method: "GET",
-            options: null
-        };
-        return this._api.request$(endpoint).pipe(map((response) => response.payload));
+        return this._api.request$("SeedsController_index", {}).pipe(map((response) => response.payload));
     }
 
     private _getNext$(): Observable<SimConfigDTO> {
-        const endpoint: Endpoint = {
-            path: "/sim-config/next",
-            method: "GET",
-            options: {
-                query: { nodeId: this._id }
-            }
-        };
-        return this._api.request$(endpoint).pipe(map((response) => response.payload));
+        const options: APIRequestOptions = { query: { nodeId: this._id } };
+        return this._api.request$("SimConfigController_next", options).pipe(map((response) => response.payload));
     }
 
     private _postResult$(result: ResultDTO): Observable<any> {
-        const endpoint: Endpoint = {
-            path: "/result",
-            method: "POST",
-            options: {
-                body: result
-            }
-        };
-        return this._api.request$(endpoint);
+        const options: APIRequestOptions = { body: result };
+        return this._api.request$("ResultController_create", options);
     }
 
     private _log(message: string, data?: any) {

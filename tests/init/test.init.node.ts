@@ -1,12 +1,11 @@
-import { C1SimulationFactory } from "aethon-arion-c1";
 import { NodeConfig } from "../../src/interfaces/node.interfaces";
 
-export const nodeConfig: NodeConfig ={
+export const nodeConfig: NodeConfig = {
     id: "test",
-    host: "http://localhost:3000/arion",
-    verbose: true,
-    saveStateSpace: true,
-    loopInterval: 2000,
-    simulationFactories: [new C1SimulationFactory()]
-  }
-  
+    host: "127.0.0.1",
+    port: 3000,
+    basePath: "arion",
+    verbose: false,
+    saveStateSpace: false,
+    loopInterval: 2000
+};
