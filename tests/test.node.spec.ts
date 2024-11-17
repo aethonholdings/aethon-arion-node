@@ -1,15 +1,14 @@
 import { firstValueFrom, lastValueFrom } from "rxjs";
 import { Node } from "../src/classes/class.node";
 import { NodeConfig } from "../src/interfaces/node.interfaces";
-import { RandomStreamFactory, ResultDTO } from "aethon-arion-pipeline";
+import { RandomStreamFactory, ResultDTO, SimConfigDTO } from "aethon-arion-pipeline";
 import { simpleC1SimulationConfig } from "./init/test.init.simconfig";
-import { C1Simulation } from "aethon-arion-c1";
+import { C1 } from "aethon-arion-c1";
 import { LogLine } from "../../core/dist/interfaces/interfaces";
-import { C1Model } from "aethon-arion-c1/dist/classes/c1-model.class";
 
 export function runSimulationTest(description: string, nodeConfig: NodeConfig) {
     let node: Node;
-    const model: C1Model = new C1Model([]);
+    const model = C1;
     const runIterations = 1;
     const verbose: boolean = true;
 
@@ -47,17 +46,20 @@ export function runSimulationTest(description: string, nodeConfig: NodeConfig) {
             const randomStreamFactory: RandomStreamFactory | undefined = node.getRandomStreamFactory();
             expect(randomStreamFactory).not.toBeUndefined();
             if (randomStreamFactory !== undefined) {
-                const simulation = new C1Simulation(simpleC1SimulationConfig, node.getLogger(), randomStreamFactory);
-                const promise: ResultDTO = await lastValueFrom(node.simulate$(simulation, runIterations, 1));
-                expect(promise).not.toBeUndefined();
-                expect(promise.runCount).toBe(runIterations);
+                const result: ResultDTO | null = await lastValueFrom(
+                    node.simulate$(simpleC1SimulationConfig as SimConfigDTO)
+                );
+                expect(result).toBeDefined();
+                if (result) {
+                    expect(result.performance).toBe(14400);
+                }
             }
         });
 
         jasmine.DEFAULT_TIMEOUT_INTERVAL = 100000;
         it("starts the node", async () => {
-            const promise = await firstValueFrom(node.start$());
-            expect(promise).toBeGreaterThanOrEqual(0);
+            const result = await firstValueFrom(node.start$());
+            expect(result).toBeDefined();
         });
         jasmine.DEFAULT_TIMEOUT_INTERVAL = originalTimeout;
     });

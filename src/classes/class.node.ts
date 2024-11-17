@@ -1,31 +1,5 @@
-import {
-    Logger,
-    Organisation,
-    RandomStreamFactory,
-    Simulation,
-    SimulationConfig,
-    StepOutput,
-    LogLine,
-    Api,
-    ResultDTO,
-    SimConfigDTO,
-    StateSpacePointDTO,
-    Model
-} from "aethon-arion-pipeline";
-import {
-    Observable,
-    catchError,
-    concatMap,
-    exhaustMap,
-    first,
-    interval,
-    map,
-    mergeMap,
-    of,
-    reduce,
-    switchMap,
-    tap
-} from "rxjs";
+import { Logger, RandomStreamFactory, LogLine, Api, ResultDTO, SimConfigDTO, Model } from "aethon-arion-pipeline";
+import { Observable, catchError, concatMap, exhaustMap, first, interval, map, mergeMap, of, switchMap } from "rxjs";
 import { NodeConfig } from "../interfaces/node.interfaces";
 import { Logger as TSLogger } from "tslog";
 import { machineIdSync } from "node-machine-id";
@@ -120,29 +94,7 @@ export class Node {
                     concatMap((response: SimConfigDTO) => {
                         if (response && response.id && response.orgConfig) {
                             this._log("SimConfig received", { jobId: response.id });
-                            const simulationConfig = {
-                                days: response.days,
-                                debug: [],
-                                randomStreamType: response.randomStreamType,
-                                orgConfig: response.orgConfig
-                            } as SimulationConfig;
-                            const simulationFactory = this._models
-                                .find((model) => model.getName() === response.orgConfig?.type)
-                                ?.getSimulationFactory();
-                            if (!simulationFactory) {
-                                this._logger.error({
-                                    sourceObject: this._name,
-                                    message: "No simulation factory found for type " + response.orgConfig.type
-                                });
-                                return of(null);
-                            } else {
-                                let simulation = simulationFactory.newSimulation(
-                                    simulationConfig,
-                                    this._logger,
-                                    this._randomStreamFactory as RandomStreamFactory // this should be safe as the stream factory is initialised before the loop starts
-                                );
-                                return this.simulate$(simulation, response.runCount, response.id);
-                            }
+                            return this.simulate$(response);
                         } else {
                             this._log("No job received - retrying");
                             return of(null);
@@ -183,47 +135,20 @@ export class Node {
         );
     }
 
-    // run one simulation run
-    simulate$(simulation: Simulation, runCount: number, simConfigId: number): Observable<ResultDTO> {
-        const startTime = new Date();
-        let organisation: Organisation;
-        let clockTick: number = 0;
-        return simulation.run$().pipe(
-            map((runOutput: StepOutput) => {
-                organisation = runOutput.organisation;
-                clockTick = runOutput.clockTick;
-                return {
-                    clockTick: runOutput.clockTick,
-                    board: runOutput.organisation.getBoard().getPlan().reporting,
-                    agentStates: runOutput.organisation.getAgents().getAgentStateArray(),
-                    plant: runOutput.organisation.getPlant().getStateTensor(),
-                    reporting: runOutput.organisation.getReporting().getReportingTensor(),
-                    priorityTensor: runOutput.organisation.getAgents().getTensors().priorityTensor
-                } as StateSpacePointDTO;
-            }),
-            reduce((stateSpace: StateSpacePointDTO[], stateSpacePoint: StateSpacePointDTO) => {
-                if (this._saveStateSpace) stateSpace.push(JSON.parse(JSON.stringify(stateSpacePoint)));
-                return stateSpace;
-            }, [] as StateSpacePointDTO[]),
-            map((results: StateSpacePointDTO[]) => {
-                const endTime = new Date();
-                return {
-                    simConfigId: simConfigId,
-                    runCount: runCount,
-                    nodeId: this._id,
-                    start: startTime,
-                    end: endTime,
-                    clockTick: clockTick,
-                    durationSec: (endTime.getTime() - startTime.getTime()) / 1000,
-                    agentStates: organisation.getAgents().getAgentStateArray(),
-                    board: organisation.getBoard().getPlan().reporting,
-                    plant: organisation.getPlant().getStateTensor(),
-                    reporting: organisation.getReporting().getReportingTensor(),
-                    priorityTensor: organisation.getAgents().getTensors().priorityTensor,
-                    stateSpace: results
-                } as ResultDTO;
-            })
-        );
+    simulate$(simConfigDTO: SimConfigDTO): Observable<ResultDTO | null> {
+        const model = this._models.find((model) => model.getName() === simConfigDTO.orgConfig?.type);
+        if (!model) {
+            this._logger.error({
+                sourceObject: this._name,
+                message: `Model ${simConfigDTO.orgConfig?.type} not found`
+            });
+            return of(null);
+        } else if (this._randomStreamFactory) {
+            return model.run$(simConfigDTO, this._randomStreamFactory, this._logger, this._id, this._saveStateSpace);
+        } else {
+            this._log("Random stream factory not initialised - retrying");
+            return of(null);
+        }
     }
 
     getLog$(): Observable<LogLine> {
