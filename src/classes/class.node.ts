@@ -1,4 +1,4 @@
-import { Logger, RandomStreamFactory, LogLine, Api, ResultDTO, SimConfigDTO, Model } from "aethon-arion-pipeline";
+import { Logger, RandomStreamFactory, LogLine, Api, ResultDTO, SimConfigDTO, Model, OptimiserData, OptimiserParameters, ConfiguratorParamData } from "aethon-arion-pipeline";
 import { Observable, catchError, concatMap, exhaustMap, first, interval, map, mergeMap, of, switchMap } from "rxjs";
 import { NodeConfig } from "../interfaces/node.interfaces";
 import { Logger as TSLogger } from "tslog";
@@ -22,9 +22,9 @@ export class Node {
     private _tsLogger = new TSLogger();
     private _counter: number = 0;
     private _counterDiv: number = 1000;
-    private _models: Model[];
+    private _models: Model<ConfiguratorParamData, OptimiserParameters, OptimiserData>[];
 
-    constructor(config: NodeConfig, models: Model[]) {
+    constructor(config: NodeConfig, models: Model<ConfiguratorParamData, OptimiserParameters, OptimiserData>[]) {
         this._verbose = config?.verbose ? true : false;
         this._logger = new Logger();
         this._logger.getObservable$().subscribe((logLine: LogLine) => {
@@ -136,7 +136,7 @@ export class Node {
     }
 
     simulate$(simConfigDTO: SimConfigDTO): Observable<ResultDTO | null> {
-        const model = this._models.find((model) => model.getName() === simConfigDTO.orgConfig?.type);
+        const model = this._models.find((model) => model.name === simConfigDTO.orgConfig?.type);
         if (!model) {
             this._logger.error({
                 sourceObject: this._name,

@@ -1,6 +1,6 @@
 {
   "name": "aethon-arion-node",
-  "version": "0.2.1",
+  "version": "0.3.0",
   "description": "The Arion data pipeline modelling computation node",
   "main": "./dist/src/main.js",
   "scripts": {
@@ -14,8 +14,8 @@
   "author": "Konstantinos Dimitriou",
   "license": "MIT",
   "dependencies": {
-    "aethon-arion-c1": "^0.3.0",
-    "aethon-arion-pipeline": "^0.2.0",
+    "aethon-arion-c1": "^0.4.0",
+    "aethon-arion-pipeline": "^0.5.0",
     "aethon-api-types": "^0.0.4",
     "node-machine-id": "^1.1.12",
     "rxjs": "~7.8.1",
