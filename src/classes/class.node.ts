@@ -466,7 +466,13 @@ export class Node {
                     }),
                     concatMap((result: ResultDTO | null) => {
                         if (result !== null && result !== undefined) {
-                            this._log("Posting results");
+                            // Estimate payload size for diagnostics
+                            const payloadSize = JSON.stringify(result).length;
+                            this._log("Posting results", {
+                                resultId: result.id,
+                                simConfigId: result.simConfigId,
+                                payloadSizeKB: Math.round(payloadSize / 1024)
+                            });
                             return this._postResult$(result);
                         } else {
                             return of(null);
@@ -826,7 +832,32 @@ export class Node {
      */
     private _postResult$(result: ResultDTO): Observable<any> {
         const options: APIRequestOptions = { body: result };
-        return this._api.request$("ResultController_create", options);
+        return this._api.request$("ResultController_create", options).pipe(
+            retry({
+                count: 5,
+                delay: (error, retryCount) => {
+                    this._log("Error posting result - retrying", {
+                        error: error?.message ? error.message : String(error || 'Unknown error'),
+                        status: error?.status || 0,
+                        statusText: error?.statusText || 'Unknown',
+                        attempt: retryCount + 1,
+                        maxRetries: 5
+                    });
+                    // Exponential backoff: 2s, 4s, 8s, 16s, 32s
+                    return timer(Math.min(2000 * Math.pow(2, retryCount), 32000));
+                }
+            }),
+            catchError((error) => {
+                this._log("Failed to post result after retries", {
+                    error: error?.message ? error.message : String(error || 'Unknown error'),
+                    status: error?.status || 0,
+                    statusText: error?.statusText || 'Unknown',
+                    resultId: result?.id,
+                    simConfigId: result?.simConfigId
+                });
+                return throwError(() => new Error('Result post failed after retries'));
+            })
+        );
     }
 
     /**
