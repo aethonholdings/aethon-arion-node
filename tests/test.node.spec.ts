@@ -51,7 +51,8 @@ export function runSimulationTest(description: string, nodeConfig: NodeConfig) {
                 );
                 expect(result).toBeDefined();
                 if (result) {
-                    expect(result.performance).toBe(14400);
+                    // Performance value for 1-day simulation with 2 agents
+                    expect(result.performance).toBe(28800);
                 }
             }
         });

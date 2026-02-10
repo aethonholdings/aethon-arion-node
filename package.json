@@ -1,6 +1,6 @@
 {
   "name": "aethon-arion-node",
-  "version": "0.3.0",
+  "version": "0.3.1",
   "description": "The Arion data pipeline modelling computation node",
   "main": "./dist/src/main.js",
   "scripts": {
@@ -9,14 +9,15 @@
     "build": "tsc",
     "format": "prettier --write \"src/**/*.ts\" \"test/**/*.ts\"",
     "lint": "eslint \"{src,apps,libs,test}/**/*.ts\" --fix",
-    "test": "ts-node node_modules/jasmine/bin/jasmine --config=./tests/jasmine.json --reporter=jasmine-console-reporter"
+    "test": "ts-node node_modules/jasmine/bin/jasmine --config=./tests/jasmine.json --reporter=jasmine-console-reporter",
+    "document": "npx typedoc src/classes/class.node.ts"
   },
   "author": "Konstantinos Dimitriou",
   "license": "MIT",
   "dependencies": {
     "aethon-api-types": "^0.0.4",
-    "aethon-arion-c1": "^0.4.0",
-    "aethon-arion-pipeline": "^0.5.0",
+    "aethon-arion-c1": "^0.4.3",
+    "aethon-arion-pipeline": "^0.5.2",
     "node-machine-id": "^1.1.12",
     "rxjs": "~7.8.1",
     "tslog": "^4.9.3",
