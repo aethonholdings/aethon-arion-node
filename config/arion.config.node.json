@@ -3,6 +3,6 @@
   "port": 3000,
   "basePath": "arion",
   "verbose": false,
-  "saveStateSpace": false,
+  "saveStateSpace": true,
   "loopInterval": 2000
 }

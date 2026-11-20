@@ -1,6 +1,6 @@
 import { Logger, RandomStreamFactory, LogLine, Api, ResultDTO, SimConfigDTO, Model } from "aethon-arion-pipeline";
-import { Observable, catchError, concatMap, exhaustMap, first, interval, map, mergeMap, of, switchMap, throwError, retry, timer } from "rxjs";
-import { NodeConfig } from "../interfaces/node.interfaces";
+import { Observable, catchError, concatMap, defer, exhaustMap, interval, map, of, throwError, retry, timer, timeout } from "rxjs";
+import { NodeConfig, validateNodeConfig } from "../interfaces/node.interfaces";
 import { Logger as TSLogger } from "tslog";
 import { machineIdSync } from "node-machine-id";
 import { API, APIRequestOptions } from "aethon-api-types";
@@ -133,11 +133,12 @@ export class Node {
     private _machineId: string;
     private _instanceId: string;
     private _api: Api;
-    private _saveStateSpace;
+    private _saveStateSpace: boolean;
+    private _requestTimeoutMs: number;
+    private _postTimeoutMs: number;
     private _loopObservable$: Observable<number>;
     private _loopInterval: number;
     private _logger: Logger;
-    private _randomStreamFactory: RandomStreamFactory | undefined;
     private _verbose: boolean;
     private _newline: boolean = false;
     private _tsLogger = new TSLogger();
@@ -213,6 +214,8 @@ export class Node {
      * @public
      */
     constructor(config: NodeConfig, models: Model[]) {
+        const errors = validateNodeConfig(config);
+        if (errors.length > 0) throw new Error(`Invalid node configuration: ${errors.join("; ")}`);
         this._verbose = config?.verbose ? true : false;
         this._logger = new Logger();
         this._logger.getObservable$().subscribe((logLine: LogLine) => {
@@ -227,665 +230,175 @@ export class Node {
         this._instanceId = Math.floor(100000 + Math.random() * 900000).toString();
         this._id = this._machineId + ":" + this._instanceId;
         this._log("Initialising node", { nodeId: this._id });
-        config?.saveStateSpace ? (this._saveStateSpace = config.saveStateSpace) : (this._saveStateSpace = false);
+        // a cap: false disables state space recording even when a simConfig asks for it
+        this._saveStateSpace = config.saveStateSpace !== false;
+        this._requestTimeoutMs = config.requestTimeoutMs ?? 30000;
+        this._postTimeoutMs = config.postTimeoutMs ?? 120000;
         this._loopInterval = config.loopInterval;
         this._loopObservable$ = interval(this._loopInterval);
         this._log("Node initialised");
     }
 
     /**
-     * Initializes the random stream factory by fetching seeds from the server.
+     * Starts the polling loop: every `loopInterval` ms, if no job is in progress, request a job, simulate it and
+     * post the result.
      *
      * @remarks
-     * This method performs a critical initialization step required before simulations can run.
-     * It establishes deterministic randomness for reproducible simulations.
-     *
-     * **Initialization Flow:**
-     * 1. Checks if factory already initialized (idempotent operation)
-     * 2. If not initialized: Requests seed array from server
-     * 3. Creates {@link RandomStreamFactory} with fetched seeds
-     * 4. Stores factory instance for simulation execution
-     * 5. Returns factory observable for subscriber chaining
-     *
-     * **Retry Strategy:**
-     * - Maximum retries: 3 attempts
-     * - Retry delay: 5 seconds between attempts
-     * - Failure after retries: Throws error, stops node startup
-     *
-     * **Idempotency:**
-     * If called multiple times, returns existing factory instance without
-     * re-fetching seeds. This allows safe re-initialization attempts.
-     *
-     * **Error Cases:**
-     * - Server unavailable: Retries with exponential backoff
-     * - Null seed response: Treated as error, triggers retry
-     * - Network timeout: Retries automatically
-     * - 3 retries exhausted: Fatal error, requires manual intervention
-     *
-     * **Observable Behavior:**
-     * - Emits: Single {@link RandomStreamFactory} instance on success
-     * - Completes: After emitting factory (via `first()` operator)
-     * - Errors: If initialization fails after all retries
-     *
-     * @returns Observable that emits the initialized RandomStreamFactory and completes
-     *
-     * @throws Error with message "Random stream factory initialization failed" after 3 retry attempts
-     *
-     * @example
-     * ```typescript
-     * const node = new Node(config, [C1]);
-     *
-     * // Initialize before starting simulations
-     * node.initialiseStreamFactory$().subscribe({
-     *   next: (factory) => {
-     *     console.log("Factory ready:", factory);
-     *     // Now safe to start node
-     *   },
-     *   error: (error) => {
-     *     console.error("Initialization failed:", error);
-     *     process.exit(1);
-     *   }
-     * });
-     *
-     * // Or use with async/await
-     * try {
-     *   const factory = await firstValueFrom(node.initialiseStreamFactory$());
-     *   console.log("Factory initialized");
-     * } catch (error) {
-     *   console.error("Failed to initialize:", error);
-     * }
-     * ```
-     *
-     * @public
+     * The loop does not end on errors: a failed request, simulation or post is logged and the next tick tries
+     * again, so a node started before the server simply waits for it. The observable only errors on a fatal
+     * programming error and never completes on its own.
      */
-    initialiseStreamFactory$(): Observable<RandomStreamFactory> {
-        this._log("Initialising random stream factory");
-        return this._loopObservable$.pipe(
-            mergeMap(() => {
-                if (!this._randomStreamFactory) {
-                    this._log("Requesting seeds");
-                    return this._getSeeds$();
-                }
-                return of(this._randomStreamFactory);
-            }),
-            switchMap((seeds: (number[] | null) | RandomStreamFactory) => {
-                if (!(seeds instanceof RandomStreamFactory)) {
-                    this._log("Seeds fetched");
-                    if (seeds !== null) {
-                        this._randomStreamFactory = new RandomStreamFactory(seeds);
-                        this._log("Random stream factory initialised");
-                        return of(this._randomStreamFactory);
-                    } else {
-                        this._log("No seeds received. Retrying.");
-                        return throwError(() => new Error('No seeds received from server'));
-                    }
-                } else {
-                    this._log("Node already initialised. Skipping.");
-                    return of(seeds);
-                }
-            }),
-            first((randomStreamFactory: RandomStreamFactory) => {
-                return randomStreamFactory ? true : false;
-            }),
-            retry({ count: 3, delay: (error, retryCount) => {
-                this._log("Error initialising random stream factory - retrying", {
-                    error: error?.message ? error.message : String(error || 'Unknown error'),
-                    attempt: retryCount + 1
-                });
-                return timer(5000); // 5 second delay between retries
-            }}),
-            catchError((error) => {
-                this._log("Failed to initialise random stream factory after retries", {
-                    error: error?.message ? error.message : String(error || 'Unknown error')
-                });
-                return throwError(() => new Error('Random stream factory initialization failed'));
-            })
-        );
+    start$(): Observable<boolean> {
+        this._log("Starting job loop", { loopInterval: this._loopInterval });
+        return this._loopObservable$.pipe(exhaustMap(() => this.runOnce$()));
     }
 
     /**
-     * Starts the node's main execution loop for processing simulation jobs.
-     *
-     * @remarks
-     * This is the primary entry point for node operation. It orchestrates the complete
-     * lifecycle from initialization through continuous job processing.
-     *
-     * **Execution Flow:**
-     *
-     * ```
-     * 1. Initialize: Call initialiseStreamFactory$() once
-     * 2. Loop: Emit at intervals defined by config.loopInterval
-     * 3. For each loop iteration:
-     *    a. Request job from server (_getNext$)
-     *    b. If job available: Execute simulation (simulate$)
-     *    c. If simulation succeeds: Post results (_postResult$)
-     *    d. If post succeeds: Emit true
-     *    e. If any step fails/empty: Emit false, continue loop
-     * 4. Repeat step 3 indefinitely until unsubscribed
-     * ```
-     *
-     * **Concurrency Control:**
-     *
-     * Uses `exhaustMap` to prevent overlapping job execution:
-     * - While processing a job, subsequent loop ticks are ignored
-     * - New jobs only requested after previous job completes
-     * - Guarantees single-threaded execution per node instance
-     * - Prevents resource contention and state corruption
-     *
-     * **Error Handling:**
-     *
-     * Robust error recovery ensures continuous operation:
-     * - Job processing errors: Logged, return false, continue loop
-     * - Network failures: Logged, return false, retry on next tick
-     * - Simulation crashes: Caught, logged, continue to next job
-     * - No infinite retries: Failed jobs abandoned, not retried endlessly
-     *
-     * **Job Availability:**
-     *
-     * When no jobs available:
-     * - Server returns null/undefined response
-     * - Node emits false and continues polling
-     * - No busy-waiting, controlled by loopInterval
-     * - Nodes automatically resume when jobs appear in queue
-     *
-     * **Progress Indicators:**
-     *
-     * - Verbose mode: Full trace logs for every operation
-     * - Quiet mode: Dots printed every 1000 clock ticks during simulation
-     * - Resets counter at start of each job
-     *
-     * **Shutdown:**
-     *
-     * To gracefully stop the node:
-     * ```typescript
-     * const subscription = node.start$().subscribe(...);
-     *
-     * // Later...
-     * subscription.unsubscribe();  // Stops loop at next iteration
-     * ```
-     *
-     * **Observable Behavior:**
-     * - Emits: Boolean for each job cycle (true=success, false=failure/no-job)
-     * - Never completes: Runs indefinitely until unsubscribed
-     * - Errors: Caught internally, converted to false emissions
-     *
-     * @returns Observable<boolean> that emits true when a job is successfully processed,
-     *          false when no job available or processing fails, and never completes
-     *
-     * @example
-     * ```typescript
-     * const node = new Node(config, [C1]);
-     *
-     * // Start node with full error handling
-     * const subscription = node.start$().subscribe({
-     *   next: (success) => {
-     *     if (success) {
-     *       console.log("Job completed successfully");
-     *     } else {
-     *       console.log("No job or processing failed, continuing...");
-     *     }
-     *   },
-     *   error: (error) => {
-     *     // Should never occur - errors caught internally
-     *     console.error("Fatal node error:", error);
-     *     process.exit(1);
-     *   },
-     *   complete: () => {
-     *     // Never called unless observable design changes
-     *     console.log("Node stopped");
-     *   }
-     * });
-     *
-     * // Graceful shutdown on SIGTERM
-     * process.on("SIGTERM", () => {
-     *   console.log("Shutting down...");
-     *   subscription.unsubscribe();
-     *   process.exit(0);
-     * });
-     * ```
-     *
-     * @public
+     * Requests one job, simulates it and posts the result. Emits true when a result was recorded, false otherwise;
+     * never errors.
      */
-    start$(): Observable<boolean> {
-        return this.initialiseStreamFactory$().pipe(
-            concatMap(() => {
-                return this._loopObservable$;
+    runOnce$(): Observable<boolean> {
+        this._log("Requesting job");
+        this._counter = 0;
+        return this._getNext$().pipe(
+            concatMap((response: SimConfigDTO) => {
+                if (response !== null && response !== undefined && response.id && response.orgConfig) {
+                    this._log("SimConfig received", { jobId: response.id, runId: response.runId, runIndex: response.runIndex });
+                    return this.simulate$(response);
+                }
+                this._log("No job received - retrying");
+                return of(null);
             }),
-            exhaustMap(() => {
-                this._log("Requesting job");
-                this._counter = 0;
-                return this._getNext$().pipe(
-                    concatMap((response: SimConfigDTO) => {
-                        if (response !== null && response !== undefined && response.id && response.orgConfig) {
-                            this._log("SimConfig received", { jobId: response.id });
-                            return this.simulate$(response);
-                        } else {
-                            this._log("No job received - retrying");
-                            return of(null);
-                        }
-                    }),
-                    concatMap((result: ResultDTO | null) => {
-                        if (result !== null && result !== undefined) {
-                            // Estimate payload size for diagnostics
-                            const payloadSize = JSON.stringify(result).length;
-                            this._log("Posting results", {
-                                resultId: result.id,
-                                simConfigId: result.simConfigId,
-                                payloadSizeKB: Math.round(payloadSize / 1024)
-                            });
-                            return this._postResult$(result);
-                        } else {
-                            return of(null);
-                        }
-                    }),
-                    concatMap((response: any) => {
-                        if (response !== null && response !== undefined && !response?.error) {
-                            this._log("Response received", { responseId: response });
-                            return of(true);
-                        } else {
-                            return of(false);
-                        }
-                    }),
-                    catchError((error) => {
-                        this._log("Error processing job", {
-                            error: error?.message ? error.message : String(error || 'Unknown error')
-                        });
-                        return of(false); // Return false instead of retrying infinitely
+            concatMap((result: ResultDTO | null) => {
+                if (result === null || result === undefined) return of(false);
+                this._log("Posting results", {
+                    simConfigId: result.simConfigId,
+                    runId: result.runId,
+                    payloadSizeKB: Math.round(JSON.stringify(result).length / 1024)
+                });
+                return this._postResult$(result).pipe(
+                    map((response: any) => {
+                        this._log("Result recorded", { resultId: response?.payload?.id ?? response?.id });
+                        return true;
                     })
                 );
             }),
             catchError((error) => {
-                this._log("Error in main loop", {
-                    error: error?.message ? error.message : String(error || 'Unknown error')
+                this._log("Error processing job", {
+                    error: error?.message ? error.message : String(error || "Unknown error"),
+                    status: error?.status
                 });
-                return of(false); // Return false instead of infinite retry
+                return of(false);
             })
         );
     }
 
     /**
-     * Executes a simulation job using the appropriate model implementation.
+     * Simulates one run of a simConfig with a random stream factory created for this run.
      *
      * @remarks
-     * This method routes simulation execution to the correct model class based on
-     * the job's `orgConfig.type` field. It acts as a dispatcher in the node's
-     * model registry pattern.
-     *
-     * **Model Selection:**
-     *
-     * The node maintains a registry of model classes (e.g., C1, C2). Each model
-     * has a static `name` property matching the `orgConfig.type` string:
-     * ```typescript
-     * const models = [C1, C2];  // C1.name === "C1", C2.name === "C2"
-     * simConfigDTO.orgConfig.type = "C1";  // Routes to C1 model
-     * ```
-     *
-     * **Execution Flow:**
-     * 1. Lookup model in registry by `orgConfig.type`
-     * 2. If not found: Log warning, return null (skip job)
-     * 3. Verify random stream factory initialized
-     * 4. If initialized: Delegate to model's `run$()` method
-     * 5. If not initialized: Return null, will retry on next loop
-     *
-     * **Model Interface:**
-     *
-     * All models must implement:
-     * ```typescript
-     * class Model {
-     *   static name: string;
-     *   run$(
-     *     config: SimConfigDTO,
-     *     randomFactory: RandomStreamFactory,
-     *     logger: Logger,
-     *     nodeId: string,
-     *     saveStateSpace: boolean
-     *   ): Observable<ResultDTO>;
-     * }
-     * ```
-     *
-     * **State Space Persistence:**
-     *
-     * The `saveStateSpace` flag is passed to the model:
-     * - `true`: Model saves complete state trajectory for analysis
-     * - `false`: Model only saves final results (memory efficient)
-     *
-     * **Error Handling:**
-     *
-     * - Unknown model type: Logged, returns null, job skipped
-     * - Factory not initialized: Logged, returns null, retry on next loop
-     * - Model execution errors: Propagated to caller (handled in `start$()`)
-     *
-     * **Progress Tracking:**
-     *
-     * Models should use the provided logger to emit trace events. The node's
-     * `_console()` method converts these to progress dots in quiet mode.
-     *
-     * @param simConfigDTO - Simulation configuration containing orgConfig with model type
-     * @returns Observable that emits ResultDTO on successful execution, null if model not found
-     *          or factory not ready
-     *
-     * @example
-     * ```typescript
-     * const config: SimConfigDTO = {
-     *   id: "sim-123",
-     *   orgConfig: {
-     *     type: "C1",  // Routes to C1 model
-     *     // ... C1-specific configuration
-     *   },
-     *   days: 30,
-     *   randomStreamType: "static"
-     * };
-     *
-     * node.simulate$(config).subscribe({
-     *   next: (result) => {
-     *     if (result) {
-     *       console.log("Simulation completed:", result.performance);
-     *     } else {
-     *       console.log("Model not available or not ready");
-     *     }
-     *   },
-     *   error: (error) => {
-     *     console.error("Simulation failed:", error);
-     *   }
-     * });
-     * ```
-     *
-     * @public
+     * - `randomStreamType: "static"`: streams are derived from (simConfig id, runIndex), so every dispatched run is
+     *   distinct and any run can be reproduced exactly. Without a runIndex (older server) the run cannot be made
+     *   reproducible and falls back to non-reproducible streams with a warning.
+     * - `randomStreamType: "random"`: non-reproducible streams.
+     * - The state space is recorded when the simConfig asks for it, unless the node configuration disables it.
      */
     simulate$(simConfigDTO: SimConfigDTO): Observable<ResultDTO | null> {
         const model = this._models.find((model) => model.name === simConfigDTO.orgConfig?.type);
         if (!model) {
             this._log(`Model ${simConfigDTO.orgConfig?.type} not found - skipping job`);
             return of(null);
-        } else if (this._randomStreamFactory) {
-            return model.run$(simConfigDTO, this._randomStreamFactory, this._logger, this._id, this._saveStateSpace);
-        } else {
-            this._log("Random stream factory not initialised - retrying");
-            return of(null);
         }
+        const saveStateSpace: boolean = simConfigDTO.saveStateSpace === true && this._saveStateSpace !== false;
+        // defer: a synchronous throw while building the simulation (e.g. an invalid horizon) becomes an error of
+        // this job rather than of the loop
+        return defer(() =>
+            model.run$(
+                simConfigDTO,
+                this.createRandomStreamFactory(simConfigDTO),
+                this._logger,
+                this._id,
+                saveStateSpace
+            )
+        );
     }
 
-    /**
-     * Gets an observable stream of structured log events.
-     *
-     * @remarks
-     * Returns a hot observable that emits all log events generated by the node
-     * and its child components (models, API client, etc.).
-     *
-     * **Use Cases:**
-     * - Real-time monitoring dashboards
-     * - Structured log collection for analysis
-     * - Custom log formatting and routing
-     * - Debugging and troubleshooting
-     *
-     * **Log Line Structure:**
-     * ```typescript
-     * {
-     *   type: "info" | "warn" | "error" | "trace",
-     *   message: {
-     *     sourceObject: string,  // Component name
-     *     message: string,       // Log message
-     *     data?: any            // Optional structured data
-     *   }
-     * }
-     * ```
-     *
-     * @returns Observable that emits all log events from the node's logger
-     *
-     * @example
-     * ```typescript
-     * const node = new Node(config, [C1]);
-     *
-     * // Subscribe to log stream
-     * node.getLog$().subscribe((logLine) => {
-     *   if (logLine.type === "error") {
-     *     // Send to error tracking service
-     *     errorTracker.log(logLine);
-     *   }
-     * });
-     * ```
-     *
-     * @public
-     */
+    /** Creates the random stream factory for one run of a simConfig (see {@link simulate$}). */
+    createRandomStreamFactory(simConfigDTO: SimConfigDTO): RandomStreamFactory {
+        if (simConfigDTO.randomStreamType === "static") {
+            if (simConfigDTO.id !== undefined && Number.isInteger(simConfigDTO.runIndex)) {
+                return RandomStreamFactory.seeded(simConfigDTO.id, simConfigDTO.runIndex as number);
+            }
+            this._logger.warning({
+                sourceObject: this._name,
+                message: "Static random stream requested without a runIndex; using non-reproducible streams",
+                data: { simConfigId: simConfigDTO.id }
+            });
+        }
+        return new RandomStreamFactory();
+    }
+
     getLog$(): Observable<LogLine> {
         return this._logger.getObservable$();
     }
 
-    /**
-     * Gets the node's logger instance for direct logging operations.
-     *
-     * @remarks
-     * Provides access to the underlying {@link Logger} instance for:
-     * - Emitting custom log events
-     * - Direct logging in tests or utilities
-     * - Integration with external logging systems
-     *
-     * The logger supports four log levels:
-     * - `info`: General informational messages
-     * - `warn`: Warning conditions
-     * - `error`: Error conditions
-     * - `trace`: Detailed execution traces (filtered in production)
-     *
-     * @returns The Logger instance used by this node
-     *
-     * @example
-     * ```typescript
-     * const node = new Node(config, [C1]);
-     * const logger = node.getLogger();
-     *
-     * // Log custom events
-     * logger.info({
-     *   sourceObject: "CustomModule",
-     *   message: "Custom operation completed",
-     *   data: { duration: 1234, status: "success" }
-     * });
-     * ```
-     *
-     * @public
-     */
     getLogger(): Logger {
         return this._logger;
     }
 
-    /**
-     * Gets the initialized random stream factory, if available.
-     *
-     * @remarks
-     * Returns the {@link RandomStreamFactory} instance after successful initialization,
-     * or `undefined` if `initialiseStreamFactory$()` hasn't completed yet.
-     *
-     * **Lifecycle:**
-     * - Before `initialiseStreamFactory$()` completes: Returns `undefined`
-     * - After initialization: Returns same factory instance for node lifetime
-     * - Factory provides deterministic random streams for reproducible simulations
-     *
-     * **Use Cases:**
-     * - Testing: Verify factory initialized before running simulations
-     * - Debugging: Inspect factory state and seed values
-     * - Utilities: Access random streams for custom operations
-     *
-     * @returns The initialized RandomStreamFactory, or undefined if not yet initialized
-     *
-     * @example
-     * ```typescript
-     * const node = new Node(config, [C1]);
-     *
-     * // Wait for initialization
-     * await firstValueFrom(node.initialiseStreamFactory$());
-     *
-     * // Now safe to access factory
-     * const factory = node.getRandomStreamFactory();
-     * if (factory) {
-     *   console.log("Factory ready with", factory.getStreamCount(), "streams");
-     * }
-     * ```
-     *
-     * @public
-     */
-    getRandomStreamFactory(): RandomStreamFactory | undefined {
-        return this._randomStreamFactory;
-    }
-
-    /**
-     * Fetches random number seeds from the server.
-     *
-     * @remarks
-     * Internal method called during initialization to retrieve seed array for
-     * deterministic random stream generation.
-     *
-     * **API Endpoint:**
-     * - Route: `SeedsController_index`
-     * - Method: GET
-     * - Response: Array of seed numbers
-     *
-     * **Seed Usage:**
-     * Seeds initialize the {@link RandomStreamFactory} which provides multiple
-     * independent random streams for different simulation components:
-     * - Agent decision-making
-     * - Event timing
-     * - Stochastic process sampling
-     * - Initial state randomization
-     *
-     * **Null Response:**
-     * If server returns null (no seeds available), the caller should retry.
-     *
-     * @returns Observable<number[] | null> - Seed array on success, null if unavailable
-     * @internal
-     */
-    private _getSeeds$(): Observable<number[] | null> {
-        return this._api.request$("SeedsController_index", {}).pipe(map((response) => response?.payload ?? null));
-    }
-
-    /**
-     * Requests the next available simulation job from the server.
-     *
-     * @remarks
-     * Internal method called in the main loop to pull jobs from the server's queue.
-     * Implements the worker-pull pattern for distributed job processing.
-     *
-     * **API Endpoint:**
-     * - Route: `SimConfigController_next`
-     * - Method: GET
-     * - Query: `{ nodeId: "machineId:instanceId" }`
-     * - Response: {@link SimConfigDTO} or null if no jobs available
-     *
-     * **Node Identification:**
-     * The nodeId query parameter allows the server to:
-     * - Track which node is processing which job
-     * - Prevent duplicate job assignment
-     * - Collect node performance metrics
-     * - Debug job distribution issues
-     *
-     * **Queue Behavior:**
-     * - Empty queue: Returns null, node continues polling
-     * - Job available: Returns job, server marks as "assigned"
-     * - Job in progress: Server skips, returns next available job
-     *
-     * **Job Priority:**
-     * Server determines job ordering based on:
-     * - Creation timestamp
-     * - Priority flags
-     * - Dependency resolution
-     * - Fair distribution algorithms
-     *
-     * @returns Observable<SimConfigDTO> - Job configuration or null if queue empty
-     * @internal
-     */
     private _getNext$(): Observable<SimConfigDTO> {
         const options: APIRequestOptions = { query: { nodeId: this._id } };
-        return this._api.request$("SimConfigController_next", options).pipe(map((response) => response?.payload ?? null));
-    }
-
-    /**
-     * Posts simulation results back to the server.
-     *
-     * @remarks
-     * Internal method called after successful simulation execution to persist results
-     * for analysis and reporting.
-     *
-     * **API Endpoint:**
-     * - Route: `ResultController_create`
-     * - Method: POST
-     * - Body: {@link ResultDTO}
-     * - Response: Created result record with database ID
-     *
-     * **ResultDTO Contents:**
-     * - `simConfigId`: Links result to job configuration
-     * - `nodeId`: Identifies which node produced the result
-     * - `performance`: Primary KPI value
-     * - `reporting`: Complete reporting metrics array
-     * - `stateSpace`: (Optional) Full trajectory for analysis
-     * - Timestamps, duration, and metadata
-     *
-     * **Transaction Semantics:**
-     * - Success: Result persisted, job marked complete
-     * - Failure: Result lost, job remains assigned (may be retried)
-     * - Network error: Retried on next loop iteration
-     *
-     * **State Space Size:**
-     * For long simulations with many agents, state space can be large (MB-GB).
-     * Set `saveStateSpace: false` in config to save only final results.
-     *
-     * @param result - Complete simulation results to persist
-     * @returns Observable<any> - Server response (typically created record)
-     * @internal
-     */
-    private _postResult$(result: ResultDTO): Observable<any> {
-        const options: APIRequestOptions = { body: result };
-        return this._api.request$("ResultController_create", options).pipe(
-            retry({
-                count: 5,
-                delay: (error, retryCount) => {
-                    this._log("Error posting result - retrying", {
-                        error: error?.message ? error.message : String(error || 'Unknown error'),
-                        status: error?.status || 0,
-                        statusText: error?.statusText || 'Unknown',
-                        attempt: retryCount + 1,
-                        maxRetries: 5
-                    });
-                    // Exponential backoff: 2s, 4s, 8s, 16s, 32s
-                    return timer(Math.min(2000 * Math.pow(2, retryCount), 32000));
-                }
-            }),
-            catchError((error) => {
-                this._log("Failed to post result after retries", {
-                    error: error?.message ? error.message : String(error || 'Unknown error'),
-                    status: error?.status || 0,
-                    statusText: error?.statusText || 'Unknown',
-                    resultId: result?.id,
-                    simConfigId: result?.simConfigId
-                });
-                return throwError(() => new Error('Result post failed after retries'));
-            })
+        return this._api.request$("SimConfigController_next", options).pipe(
+            timeout({ first: this._requestTimeoutMs }),
+            map((response) => response?.payload ?? null)
         );
     }
 
     /**
-     * Emits a structured log event via the node's logger.
-     *
-     * @remarks
-     * Internal convenience method for consistent logging throughout the node.
-     * All logs are tagged with the node's name ("Node") as the source object.
-     *
-     * **Log Format:**
-     * ```typescript
-     * {
-     *   sourceObject: "Node",
-     *   message: "User-provided message",
-     *   data: { optional: "structured data" }
-     * }
-     * ```
-     *
-     * **Routing:**
-     * Logs are emitted through the logger's observable stream and:
-     * 1. Captured by `_console()` for terminal output
-     * 2. Available via `getLog$()` for external subscribers
-     * 3. Included in structured log collection systems
-     *
-     * @param message - Human-readable log message
-     * @param data - Optional structured data for programmatic analysis
-     * @internal
+     * Posts a result. Retries only transient failures (network errors, timeouts, 5xx, 429); a 409 means the server
+     * already holds a result for this run and counts as success. Posting is idempotent through the result's runId,
+     * so a retry after a response was lost cannot double count the run.
      */
+    private _postResult$(result: ResultDTO): Observable<any> {
+        const options: APIRequestOptions = { body: result };
+        const maxRetries = 5;
+        return defer(() => this._api.request$("ResultController_create", options)).pipe(
+            timeout({ first: this._postTimeoutMs }),
+            retry({
+                count: maxRetries,
+                delay: (error, retryCount) => {
+                    if (!Node.isTransientError(error)) return throwError(() => error);
+                    this._log("Error posting result - retrying", {
+                        error: error?.message ? error.message : String(error || "Unknown error"),
+                        status: error?.status || 0,
+                        attempt: retryCount,
+                        maxRetries: maxRetries
+                    });
+                    return timer(Math.min(2000 * Math.pow(2, retryCount - 1), 32000));
+                }
+            }),
+            catchError((error) => {
+                if (error?.status === 409) {
+                    this._log("Result already recorded by the server", { runId: result?.runId });
+                    return of({ duplicate: true });
+                }
+                this._log("Failed to post result", {
+                    error: error?.message ? error.message : String(error || "Unknown error"),
+                    status: error?.status || 0,
+                    simConfigId: result?.simConfigId,
+                    runId: result?.runId
+                });
+                return throwError(() => error);
+            })
+        );
+    }
+
+    /** True for failures worth retrying: network errors and timeouts (no status), 5xx and 429. */
+    static isTransientError(error: any): boolean {
+        const status: number = error?.status ?? 0;
+        return status === 0 || status === 429 || status >= 500;
+    }
+
     private _log(message: string, data?: any) {
         this._logger.info({ sourceObject: this._name, message: message, data: data });
     }
