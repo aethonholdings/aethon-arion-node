@@ -325,6 +325,12 @@ export class Node {
 
     /** Creates the random stream factory for one run of a simConfig (see {@link simulate$}). */
     createRandomStreamFactory(simConfigDTO: SimConfigDTO): RandomStreamFactory {
+        // server-issued keys ([base seed, org config replicate, run index]): the same replicate and run share their
+        // streams at every optimiser point (common random numbers); used for both stream types, "random" differing
+        // by a base seed drawn once per simulation parameter set
+        if (Array.isArray(simConfigDTO.seedKeys) && simConfigDTO.seedKeys.length > 0) {
+            return RandomStreamFactory.seeded(...simConfigDTO.seedKeys);
+        }
         if (simConfigDTO.randomStreamType === "static") {
             if (simConfigDTO.id !== undefined && Number.isInteger(simConfigDTO.runIndex)) {
                 return RandomStreamFactory.seeded(simConfigDTO.id, simConfigDTO.runIndex as number);

@@ -41,6 +41,16 @@ describe("Node", () => {
         expect(a.runId).toBe(70);
     });
 
+    it("uses server-issued seed keys so the same replicate and run share streams across optimiser points", async () => {
+        const node = new Node(config, [C1]);
+        const run = (j: SimConfigDTO) => lastValueFrom(node.simulate$(j)) as Promise<ResultDTO>;
+        const a = await run(job({ id: 7, seedKeys: [5, 1, 1] }));
+        const b = await run(job({ id: 8, seedKeys: [5, 1, 1] }));
+        const c = await run(job({ id: 7, seedKeys: [5, 1, 2] }));
+        expect(b.reporting).toEqual(a.reporting);
+        expect(JSON.stringify(c.priorityTensor)).not.toEqual(JSON.stringify(a.priorityTensor));
+    });
+
     it("uses the simConfig's state space flag, capped by the node configuration", async () => {
         const on = new Node(config, [C1]);
         const off = new Node({ ...config, saveStateSpace: false }, [C1]);
