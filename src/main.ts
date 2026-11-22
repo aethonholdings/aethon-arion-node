@@ -1,25 +1,13 @@
 import fs from "fs";
-import path from "path";
 import { NodeConfig } from "./interfaces/node.interfaces";
 import { Node } from "./classes/class.node";
 import { Model } from "aethon-arion-pipeline";
 import { C1 } from "aethon-arion-c1";
 import { Subscription } from "rxjs";
-
-// the configuration file: first CLI argument, else ARION_NODE_CONFIG, else config/arion.config.node.json in the
-// package root (resolved from this file, so the node can be started from any working directory)
-function resolveConfigPath(): string {
-    const explicit = process.argv[2] || process.env.ARION_NODE_CONFIG;
-    if (explicit) return path.resolve(explicit);
-    const candidates = [
-        path.resolve(__dirname, "..", "config", "arion.config.node.json"), // ts-node: src/main.ts
-        path.resolve(__dirname, "..", "..", "config", "arion.config.node.json") // compiled: dist/src/main.js
-    ];
-    return candidates.find((candidate) => fs.existsSync(candidate)) ?? candidates[0];
-}
+import { resolveConfigPath } from "./bootstrap";
 
 let node: Node;
-const configPath = resolveConfigPath();
+const configPath = resolveConfigPath(process.argv[2], process.env.ARION_NODE_CONFIG, __dirname);
 try {
     const nodeConfig = JSON.parse(fs.readFileSync(configPath, "utf-8")) as NodeConfig;
     const models: Model[] = [C1];

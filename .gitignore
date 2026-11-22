@@ -46,3 +46,5 @@ lerna-debug.log*
 # yalc
 .yalc
 yalc.lock
+# sibling packages built by ci/link-siblings.sh
+/.siblings
