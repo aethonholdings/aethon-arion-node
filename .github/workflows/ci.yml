@@ -1,0 +1,22 @@
+name: CI
+
+on:
+  push:
+  pull_request:
+
+# Unpublished sibling packages are built from the matching branch by ci/link-siblings.sh. The repositories are
+# private: add a repository secret ARION_REPOS_TOKEN with read access to the aethon-arion repositories.
+env:
+  ARION_REPOS_TOKEN: ${{ secrets.ARION_REPOS_TOKEN }}
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+      - run: bash ci/link-siblings.sh core pipeline c1
+      - run: npm run build
+      - run: npm test
