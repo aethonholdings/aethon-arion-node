@@ -60,6 +60,25 @@ describe("Node", () => {
         expect(((await lastValueFrom(off.simulate$(withFlag))) as ResultDTO).stateSpace!.length).toBe(0);
     });
 
+    it("reports a failed run to the server and keeps polling", async () => {
+        const node = new Node(config, [C1]);
+        const bad = job({ runId: 77 });
+        (bad.orgConfig as any).clockTickSeconds = 7; // invalid horizon: the simulation throws
+        const reports: any[] = [];
+        const calls = stubApi(node, {
+            SimConfigController_next: () => of({ payload: bad }),
+            RunController_fail: (options: any) => { reports.push(options); return of({ payload: { runId: 77, failedRuns: 1 } }); }
+        });
+        expect(await firstValueFrom(node.runOnce$())).toBe(false);
+        expect(reports.length).toBe(1);
+        expect(reports[0].params.id).toBe(77);
+        expect(reports[0].body.error).toContain("whole number");
+        expect(calls["ResultController_create"]).toBeUndefined();
+        // an undeliverable report does not break the loop
+        stubApi(node, { SimConfigController_next: () => of({ payload: bad }), RunController_fail: () => throwError(() => httpError(503)) });
+        expect(await firstValueFrom(node.runOnce$())).toBe(false);
+    });
+
     it("returns null for an unknown model and errors the job (not the loop) on an invalid horizon", async () => {
         const node = new Node(config, [C1]);
         expect(await lastValueFrom(node.simulate$(job({ orgConfig: { type: "Unknown" } as any })))).toBeNull();

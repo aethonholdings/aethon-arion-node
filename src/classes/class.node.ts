@@ -264,7 +264,11 @@ export class Node {
             concatMap((response: SimConfigDTO) => {
                 if (response !== null && response !== undefined && response.id && response.orgConfig) {
                     this._log("SimConfig received", { jobId: response.id, runId: response.runId, runIndex: response.runIndex });
-                    return this.simulate$(response);
+                    // a run that fails here is reported to the server, which stops dispatching a simConfig whose runs
+                    // keep failing (otherwise every node would be handed the same failing job forever)
+                    return this.simulate$(response).pipe(
+                        catchError((error) => this._reportFailure$(response, error).pipe(map(() => null)))
+                    );
                 }
                 this._log("No job received - retrying");
                 return of(null);
@@ -397,6 +401,26 @@ export class Node {
                 return throwError(() => error);
             })
         );
+    }
+
+    /** Reports a failed run to the server (best effort: a report that cannot be delivered is only logged). */
+    private _reportFailure$(job: SimConfigDTO, error: any): Observable<any> {
+        const message: string = error?.message ? error.message : String(error || "Unknown error");
+        this._log("Simulation failed", { simConfigId: job.id, runId: job.runId, error: message });
+        if (job.runId === undefined || job.runId === null) return of(null);
+        return this._api
+            .request$("RunController_fail", { params: { id: job.runId }, body: { error: message } } as APIRequestOptions)
+            .pipe(
+                timeout({ first: this._requestTimeoutMs }),
+                map((response: any) => {
+                    this._log("Failure reported", response?.payload ?? response);
+                    return response;
+                }),
+                catchError((reportError) => {
+                    this._log("Failure report not delivered", { runId: job.runId, error: reportError?.message ?? String(reportError) });
+                    return of(null);
+                })
+            );
     }
 
     /** True for failures worth retrying: network errors and timeouts (no status), 5xx and 429. */

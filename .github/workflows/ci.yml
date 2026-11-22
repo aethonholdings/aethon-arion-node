@@ -8,6 +8,8 @@ on:
 # private: add a repository secret ARION_REPOS_TOKEN with read access to the aethon-arion repositories.
 env:
   ARION_REPOS_TOKEN: ${{ secrets.ARION_REPOS_TOKEN }}
+  # packed sibling builds keyed by sibling commit, restored and saved by actions/cache
+  ARION_SIBLINGS_CACHE: /home/runner/.arion-siblings
 
 jobs:
   test:
@@ -17,6 +19,16 @@ jobs:
       - uses: actions/setup-node@v4
         with:
           node-version: 22
+      - name: Restore the npm download cache and the packed sibling builds
+        uses: actions/cache@v4
+        with:
+          path: |
+            ~/.npm
+            /home/runner/.arion-siblings
+          key: arion-${{ runner.os }}-${{ hashFiles('package.json') }}-${{ github.run_id }}
+          restore-keys: |
+            arion-${{ runner.os }}-${{ hashFiles('package.json') }}-
+            arion-${{ runner.os }}-
       - run: bash ci/link-siblings.sh core pipeline c1
       - run: npm run build
       - run: npm test
