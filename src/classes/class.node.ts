@@ -192,6 +192,7 @@ export class Node {
      * @param config.saveStateSpace - Save complete state trajectory vs final results only
      * @param config.id - Optional machine ID override (defaults to hardware ID)
      * @param models - Array of model classes supporting different simulation types
+     * @param auth - The node's key from `login` (sent as `Authorization: Bearer <key>` with every request)
      *
      * @example
      * ```typescript
@@ -213,7 +214,7 @@ export class Node {
      *
      * @public
      */
-    constructor(config: NodeConfig, models: Model[]) {
+    constructor(config: NodeConfig, models: Model[], auth?: { key?: string }) {
         const errors = validateNodeConfig(config);
         if (errors.length > 0) throw new Error(`Invalid node configuration: ${errors.join("; ")}`);
         this._verbose = config?.verbose ? true : false;
@@ -225,7 +226,8 @@ export class Node {
             new API(config.protocol || "http", config.host, openApi, config.port, config.basePath),
             this._logger
         );
-        config?.id ? (this._machineId = config.id) : (this._machineId = machineIdSync());
+        if (auth?.key) this._api.setHeader("Authorization", `Bearer ${auth.key}`);
+        this._machineId = Node.machineId(config);
         this._models = models;
         this._instanceId = Math.floor(100000 + Math.random() * 900000).toString();
         this._id = this._machineId + ":" + this._instanceId;
@@ -288,6 +290,18 @@ export class Node {
                 );
             }),
             catchError((error) => {
+                // the server refused this node's key (revoked, replaced or missing) or its node id: polling on would
+                // only repeat the refusal, so the node stops
+                if (error?.status === 401 || error?.status === 403) {
+                    return throwError(
+                        () =>
+                            new NodeAuthError(
+                                error.status === 401
+                                    ? "The server rejected this node's key (missing, revoked or replaced): run `login` to authorise the node"
+                                    : "The server refused this node's id: run `login` to authorise the node"
+                            )
+                    );
+                }
                 this._log("Error processing job", {
                     error: error?.message ? error.message : String(error || "Unknown error"),
                     status: error?.status
@@ -350,6 +364,11 @@ export class Node {
 
     getLog$(): Observable<LogLine> {
         return this._logger.getObservable$();
+    }
+
+    /** The machine id the node's key is bound to: `config.id`, else the hardware-based machine id. */
+    static machineId(config: Pick<NodeConfig, "id">): string {
+        return config?.id ? config.id : machineIdSync();
     }
 
     getLogger(): Logger {
@@ -520,5 +539,13 @@ export class Node {
                 }
                 this._tsLogger.info(message, data);
         }
+    }
+}
+
+/** The server refused the node's key or id; the node must be authorised again (`login`). */
+export class NodeAuthError extends Error {
+    constructor(message: string) {
+        super(message);
+        this.name = "NodeAuthError";
     }
 }

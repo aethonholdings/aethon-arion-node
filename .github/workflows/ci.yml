@@ -4,8 +4,8 @@ on:
   push:
   pull_request:
 
-# Unpublished sibling packages are built from the matching branch by ci/link-siblings.sh. The repositories are
-# private: add a repository secret ARION_REPOS_TOKEN with read access to the aethon-arion repositories.
+# Unpublished sibling packages are built from the matching branch by ci/link-siblings.sh. The repositories are public,
+# so no token is needed; ARION_REPOS_TOKEN (optional) is only used if they are made private.
 env:
   ARION_REPOS_TOKEN: ${{ secrets.ARION_REPOS_TOKEN }}
   # packed sibling builds keyed by sibling commit, restored and saved by actions/cache

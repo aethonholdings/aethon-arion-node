@@ -1,7 +1,9 @@
 import { APIProtocol } from "aethon-api-types";
 
 export interface NodeConfig {
+    /** Machine id override (default: the hardware-based machine id). The node's key is bound to it. */
     id?: string;
+    /** Server host; replaced by the server the node was authorised by (see `login`). */
     host: string;
     protocol?: APIProtocol;
     port?: number;

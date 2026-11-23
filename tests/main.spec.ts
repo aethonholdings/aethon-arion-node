@@ -29,7 +29,7 @@ describe("Node entry point", () => {
         const invalid = path.join(dir, "invalid.json");
         fs.writeFileSync(invalid, JSON.stringify({ host: "", loopInterval: 0 }));
         for (const file of [path.join(dir, "missing.json"), malformed, invalid]) {
-            const result = runMain([file]);
+            const result = runMain([file], { ARION_SERVER_URL: "http://127.0.0.1:1", ARION_NODE_KEY: "k" });
             expect(result.status).toBe(1);
             expect(result.stderr).toContain("Failed to start the node");
         }
