@@ -34,8 +34,8 @@ npm run login            # or: node dist/src/main.js login [config] [--allow-htt
 |---|---|
 | Address without a scheme | https, except `localhost` and `127.0.0.1` (http) |
 | Plain http to another host | Refused, because the password and the key would cross the network readable; `--allow-http` overrides |
-| `npm start` with no key, in a terminal | Runs `login` first |
-| `npm start` with no key, without a terminal (service, container) | Exits with code 1; run `login`, or set `ARION_SERVER_URL` and `ARION_NODE_KEY` |
+| `npm run login` | Authorises the node and saves the key, then exits; it never starts the node |
+| `npm start` with no key | Exits with code 1; run `login` first, or set `ARION_SERVER_URL` and `ARION_NODE_KEY` |
 | The server rejects the key (revoked, or replaced by a newer `login` of this machine) | The node stops with code 1 and asks for `login` |
 
 Keys do not expire. A key stays valid until it is revoked on the server (`npm run node:revoke <id>`) or replaced by a new `login` from the same machine.

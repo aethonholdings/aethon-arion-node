@@ -11,8 +11,8 @@ import { prompt } from "./auth/prompt";
 
 /**
  * Usage:
- *   main.js [config]                  run the node (authorises it first when there is no key and a terminal is attached)
- *   main.js login [config] [--allow-http]   authorise the node with the server and save its key
+ *   main.js [config]                        run the node (it must have been authorised with `login`)
+ *   main.js login [config] [--allow-http]   authorise the node with the server and save its key; does not start it
  *
  * The key is kept in ~/.arion/node-credentials.json (ARION_NODE_CREDENTIALS), or given as ARION_NODE_KEY together
  * with ARION_SERVER_URL.
@@ -49,12 +49,9 @@ async function main(): Promise<void> {
         process.exit(0);
     }
 
-    let credentials: NodeCredentials | null = loadCredentials(file);
-    if (!credentials) {
-        if (!process.stdin.isTTY) fail(`This node is not authorised (no ${file}): run \`login\` first, or set ARION_SERVER_URL and ARION_NODE_KEY`);
-        console.log("This node is not authorised yet.");
-        credentials = await authorise(config, file);
-    }
+    // starting never authorises: authorisation is the separate `login` command
+    const credentials: NodeCredentials | null = loadCredentials(file);
+    if (!credentials) fail(`This node is not authorised (no ${file}): run \`login\` first, or set ARION_SERVER_URL and ARION_NODE_KEY`);
 
     let node: Node;
     try {

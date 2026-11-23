@@ -123,12 +123,43 @@ describe("Node authentication", () => {
             expect(wrong.status).toBe(1);
             expect(wrong.out).toContain("Invalid credentials");
             expect(fs.existsSync(file)).toBe(false);
+            const before = server.requests.length;
             const ok = await run(["login", configFile], `${server.url}\noperator\nsecret\n`);
             expect(ok.status).toBe(0);
+            // login only authorises: one request (POST /auth/node), no job polling
+            expect(server.requests.slice(before).map((r) => `${r.method} ${r.url}`)).toEqual(["POST /arion/auth/node"]);
             expect(JSON.parse(fs.readFileSync(file, "utf-8"))).toEqual(jasmine.objectContaining({ serverUrl: server.url, nodeId: "machine-1", key: "the-key" }));
             expect(fs.statSync(file).mode & 0o777).toBe(0o600);
         } finally {
             server.close();
         }
+    }, 120000);
+
+    it("does not offer to log in when started without a key, even in a terminal", async () => {
+        const file = path.join(dir, "tty", "creds.json");
+        const configFile = path.join(dir, "config-tty.json");
+        fs.writeFileSync(configFile, JSON.stringify(config));
+        const command = [process.execPath, "-r", require.resolve("ts-node/register/transpile-only", { paths: [root] }), path.join(root, "src", "main.ts"), configFile]
+            .map((arg) => `'${arg}'`)
+            .join(" ");
+        // `script` runs the node with a pseudo-terminal as stdin
+        const result = await new Promise<{ status: number | null; out: string }>((resolve) => {
+            const child = spawn("script", ["-qec", command, "/dev/null"], {
+                cwd: os.tmpdir(),
+                env: { ...process.env, TS_NODE_PROJECT: path.join(root, "tsconfig.json"), ARION_NODE_CREDENTIALS: file }
+            });
+            let out = "";
+            child.stdout.on("data", (d) => (out += d));
+            child.stderr.on("data", (d) => (out += d));
+            const timer = setTimeout(() => child.kill(), 60000); // a prompt would wait for input until killed
+            child.on("close", (status) => {
+                clearTimeout(timer);
+                resolve({ status, out });
+            });
+        });
+        expect(result.out).toContain("not authorised");
+        expect(result.out).not.toContain("Server address");
+        expect(result.status).toBe(1);
+        expect(fs.existsSync(file)).toBe(false);
     }, 120000);
 });
