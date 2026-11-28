@@ -256,3 +256,77 @@ describe("Node run cancellation (step 2.3)", () => {
         await node.close();
     });
 });
+
+describe("Spot interruption drain (step 2.4)", () => {
+    const http = require("http");
+    // a stub EC2 instance metadata service: IMDSv2 token, then the notice once `notice` is set
+    const imds = async (state: { notice: string | null; tokenStatus?: number }) => {
+        const server = http.createServer((req: any, res: any) => {
+            if (req.method === "PUT" && req.url === "/latest/api/token") { res.writeHead(state.tokenStatus ?? 200); return res.end("token"); }
+            if (req.url === "/latest/meta-data/spot/instance-action" && req.headers["x-aws-ec2-metadata-token"] === "token" && state.notice) { res.writeHead(200); return res.end(state.notice); }
+            res.writeHead(404); res.end();
+        });
+        await new Promise((resolve) => server.listen(0, "127.0.0.1", resolve));
+        return { url: `http://127.0.0.1:${server.address().port}`, close: () => server.close() };
+    };
+
+    it("reads the notice, and finds none when there is none or no metadata service", async () => {
+        const { spotInterruptionNotice } = require("../src/classes/spot-watch");
+        const state: any = { notice: null };
+        const service = await imds(state);
+        try {
+            expect(await spotInterruptionNotice(service.url)).toBeNull();
+            state.notice = '{"action":"terminate","time":"2026-11-28T15:00:00Z"}';
+            expect(await spotInterruptionNotice(service.url)).toContain("terminate");
+            state.tokenStatus = 403;
+            expect(await spotInterruptionNotice(service.url)).toBeNull();
+        } finally {
+            service.close();
+        }
+        expect(await spotInterruptionNotice("http://127.0.0.1:1")).toBeNull();
+    });
+
+    it("on a notice mid-run: cancels the run, releases it to the server, takes no more work and stops", async () => {
+        const state: any = { notice: null };
+        const service = await imds(state);
+        process.env.ARION_IMDS_URL = service.url;
+        const node = new Node({ ...config, simulationThread: "worker", heartbeatIntervalMs: 0, spotCheckIntervalMs: 100, loopInterval: 100 }, [C1]);
+        const calls: { operationId: string; options: any }[] = [];
+        (node as any)._api = {
+            request$: (operationId: string, options: any) => {
+                calls.push({ operationId, options });
+                if (operationId === "SimConfigController_next") return of({ payload: job({ days: 200 } as any) });
+                return of({ payload: { released: true } });
+            }
+        };
+        const workerLogs = spyOn(node as any, "_workerLog").and.stub();
+        let completed = false;
+        node.start$().subscribe({ complete: () => (completed = true) });
+        try {
+            for (let i = 0; i < 100 && !(node.getStatus().run?.clockTick ?? 0); i++) await new Promise((resolve) => setTimeout(resolve, 50));
+            state.notice = '{"action":"terminate"}';
+            for (let i = 0; i < 200 && !completed; i++) await new Promise((resolve) => setTimeout(resolve, 50));
+            expect(completed).toBe(true);
+            expect(node.draining).toContain("Spot interruption notice");
+            expect(node.getStatus().state).toBe("draining");
+            expect(node.cancelledRuns).toBe(1);
+            const release = calls.find((c) => c.operationId === "RunController_release");
+            expect(release?.options).toEqual({ params: { id: 70 }, body: { nodeId: node.getStatus().nodeId } });
+            expect(calls.filter((c) => c.operationId === "SimConfigController_next").length).toBe(1); // no more work taken
+            expect(calls.some((c) => c.operationId === "RunController_fail")).toBe(false);
+            // this run warns on every tick: each distinct warning crosses to the main thread once, not per tick
+            const messages = workerLogs.calls.allArgs().map((a: any[]) => a[2]);
+            expect(messages.length).toBeGreaterThan(0);
+            expect(new Set(messages).size).toBe(messages.length);
+        } finally {
+            delete process.env.ARION_IMDS_URL;
+            service.close();
+            await node.close();
+        }
+    }, 60000);
+
+    it("does not check off EC2 unless asked", () => {
+        const node = new Node({ ...config }, [C1]);
+        expect((node as any)._spotCheckMs).toBe(0);
+    });
+});

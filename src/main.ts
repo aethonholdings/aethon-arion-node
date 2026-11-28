@@ -67,7 +67,12 @@ async function main(): Promise<void> {
             process.exit(1);
         },
         complete: () => {
-            // the job loop never completes on its own; completion is unexpected
+            // the job loop completes only when the node drains (e.g. a Spot interruption notice)
+            if (node.draining) {
+                node.getLogger().info({ sourceObject: "Main", message: "Drained", data: { reason: node.draining } });
+                void node.close().finally(() => process.exit(0));
+                return;
+            }
             node.getLogger().error({ sourceObject: "Main", message: "Node job loop ended unexpectedly" });
             process.exit(1);
         }

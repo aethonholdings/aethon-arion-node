@@ -1,5 +1,5 @@
 import { Logger, RandomStreamFactory, LogLine, Api, ResultDTO, SimConfigDTO, Model } from "aethon-arion-pipeline";
-import { Observable, catchError, concatMap, defer, exhaustMap, filter, finalize, ignoreElements, map, merge, of, repeat, tap, throwError, retry, timer, timeout } from "rxjs";
+import { EMPTY, Observable, Subject, catchError, concatMap, defer, exhaustMap, filter, finalize, from, ignoreElements, map, merge, of, repeat, take, takeUntil, tap, throwError, retry, timer, timeout } from "rxjs";
 import { NodeConfig, validateNodeConfig } from "../interfaces/node.interfaces";
 import { Logger as TSLogger } from "tslog";
 import { machineIdSync } from "node-machine-id";
@@ -9,9 +9,10 @@ import path from "path";
 import { API, APIRequestOptions } from "aethon-api-types";
 import openApi from "../../swagger/swagger.json";
 import { RunCancelledError, RunEvent, WorkerSimulationRunner } from "./simulation-runner";
+import { spotInterruptionNotice } from "./spot-watch";
 
 /** What a node process is doing (reported to the server by heartbeats). */
-export type NodeState = "idle" | "requesting" | "simulating" | "posting" | "backing-off";
+export type NodeState = "idle" | "requesting" | "simulating" | "posting" | "backing-off" | "draining";
 
 /** A node process's activity: its state, the run in progress and counters since it started. */
 export interface NodeStatus {
@@ -173,6 +174,9 @@ export class Node {
     private _completedRuns: number = 0;
     private _failedRuns: number = 0;
     private _cancelledRuns: number = 0;
+    private _draining: string | null = null;
+    private _stopped$ = new Subject<void>();
+    private _spotCheckMs: number;
     private _totalRunMs: number = 0;
     private _lastError: string | null = null;
     private _startedAt: string = new Date().toISOString();
@@ -272,6 +276,9 @@ export class Node {
         this._postTimeoutMs = config.postTimeoutMs ?? 120000;
         this._loopInterval = config.loopInterval;
         this._heartbeatIntervalMs = config.heartbeatIntervalMs ?? 10000;
+        // Spot interruption checks: on by default on EC2 (the instance id is set by deploy/aws/node-setup.sh)
+        const onEc2 = String(process.env.ARION_NODE_INSTANCE ?? "").startsWith("i-");
+        this._spotCheckMs = config.spotCheckIntervalMs ?? (onEc2 ? 5000 : 0);
         // simulations run in a worker thread unless the configuration asks for the main thread
         this._runner =
             config.simulationThread === "worker"
@@ -292,23 +299,67 @@ export class Node {
      * programming error and never completes on its own.
      */
     start$(): Observable<boolean> {
-        this._log("Starting job loop", { loopInterval: this._loopInterval, heartbeatIntervalMs: this._heartbeatIntervalMs });
+        this._log("Starting job loop", { loopInterval: this._loopInterval, heartbeatIntervalMs: this._heartbeatIntervalMs, spotCheckIntervalMs: this._spotCheckMs });
         // one job at a time: the next request follows at once after a recorded result, after loopInterval when there
         // was no work, and after an exponential backoff with jitter after errors (so that many processes do not
-        // retry in step against a struggling server)
-        const loop$ = defer(() => this.runOnce$()).pipe(
+        // retry in step against a struggling server). A draining node stops asking (the loop completes).
+        const loop$ = defer(() => (this._draining ? EMPTY : this.runOnce$())).pipe(
             repeat({
                 delay: () => {
+                    if (this._draining) return EMPTY;
                     const delay = this.nextDelay();
                     if (this._consecutiveErrors > 0) this._state = "backing-off";
-                    return timer(delay);
+                    return timer(delay).pipe(takeUntil(this._stopped$));
                 }
-            })
+            }),
+            finalize(() => this._stopped$.next())
         );
-        if (this._heartbeatIntervalMs <= 0) return loop$;
+        const side$: Observable<never>[] = [];
         // heartbeats run beside the job loop (the main thread is free while a worker thread simulates)
-        const heartbeats$ = timer(0, this._heartbeatIntervalMs).pipe(exhaustMap(() => this.heartbeat$()), ignoreElements());
-        return merge(loop$, heartbeats$);
+        if (this._heartbeatIntervalMs > 0) side$.push(timer(0, this._heartbeatIntervalMs).pipe(exhaustMap(() => this.heartbeat$()), ignoreElements()));
+        if (this._spotCheckMs > 0) {
+            side$.push(
+                timer(0, this._spotCheckMs).pipe(
+                    exhaustMap(() => from(spotInterruptionNotice())),
+                    filter((notice): notice is string => notice !== null),
+                    take(1),
+                    tap((notice) => void this.drain(`Spot interruption notice: ${notice}`)),
+                    ignoreElements()
+                )
+            );
+        }
+        return merge(loop$, ...side$.map((s$) => s$.pipe(takeUntil(this._stopped$))));
+    }
+
+    /**
+     * Stops the node: no further jobs, the run in progress is cancelled and its lease released (so that the server
+     * hands it out again at once), and start$ completes. Used on a Spot interruption notice.
+     */
+    async drain(reason: string): Promise<void> {
+        if (this._draining) return;
+        this._draining = reason;
+        this._state = "draining";
+        this._logger.warning({ sourceObject: this._name, message: "Draining", data: { reason } });
+        const runId = this._run?.runId;
+        if (await this.cancelRun(reason)) this._log("Run cancelled for draining", { runId });
+        if (runId !== undefined) {
+            try {
+                await new Promise((resolve) =>
+                    this._api
+                        .request$("RunController_release", { params: { id: runId }, body: { nodeId: this._id } } as APIRequestOptions)
+                        .pipe(timeout({ first: 10000 }))
+                        .subscribe({ next: resolve, error: resolve, complete: () => resolve(null) })
+                );
+                this._log("Run released", { runId });
+            } catch {
+                // best effort: the lease expires anyway
+            }
+        }
+    }
+
+    /** Why the node is draining, or null. */
+    get draining(): string | null {
+        return this._draining;
     }
 
     /**
@@ -481,7 +532,7 @@ export class Node {
     getStatus(): NodeStatus {
         return {
             nodeId: this._id,
-            state: this._state,
+            state: this._draining ? "draining" : this._state,
             run: this._run ? { ...this._run } : null,
             completedRuns: this._completedRuns,
             failedRuns: this._failedRuns,

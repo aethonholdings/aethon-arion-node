@@ -23,6 +23,8 @@ export interface NodeConfig {
     backoffBaseMs?: number;
     /** Longest backoff in ms (default 60000). */
     backoffMaxMs?: number;
+    /** Spot interruption check interval in ms (default 5000 on EC2, 0 elsewhere; 0 disables the check). */
+    spotCheckIntervalMs?: number;
     /** Heartbeat interval in ms (default 10000; 0 disables heartbeats). */
     heartbeatIntervalMs?: number;
 }

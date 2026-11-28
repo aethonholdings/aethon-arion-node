@@ -915,6 +915,39 @@
           "Node"
         ]
       }
+    },
+    "/arion/run/{id}/release": {
+      "post": {
+        "operationId": "RunController_release",
+        "parameters": [
+          {
+            "name": "id",
+            "required": true,
+            "in": "path",
+            "schema": {
+              "type": "number"
+            }
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Whether the run was released"
+          }
+        },
+        "tags": [
+          "Run"
+        ]
+      }
     }
   },
   "info": {
