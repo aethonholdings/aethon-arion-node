@@ -12,7 +12,8 @@
     "test": "ts-node node_modules/jasmine/bin/jasmine --config=./tests/jasmine.json --reporter=jasmine-console-reporter",
     "document": "npx typedoc src/classes/class.node.ts",
     "login": "node ./dist/src/main.js login",
-    "start": "node ./dist/src/main.js"
+    "start": "node ./dist/src/main.js",
+    "postbuild": "node scripts/write-version.js"
   },
   "author": "Konstantinos Dimitriou",
   "license": "MIT",

@@ -19,6 +19,8 @@ export interface NodeConfig {
     postTimeoutMs?: number;
     /** Where simulations run: "worker" (a worker thread, keeping the node responsive during a run) or "main" (default). */
     simulationThread?: "worker" | "main";
+    /** Heartbeat interval in ms (default 10000; 0 disables heartbeats). */
+    heartbeatIntervalMs?: number;
 }
 
 /** Validates a node configuration and returns the list of problems found (empty when valid). */
@@ -36,6 +38,9 @@ export function validateNodeConfig(config: NodeConfig): string[] {
         if (config[key] !== undefined && !(Number.isInteger(config[key]) && (config[key] as number) > 0)) {
             errors.push(`${key} must be a positive integer (ms)`);
         }
+    }
+    if (config.heartbeatIntervalMs !== undefined && !(Number.isInteger(config.heartbeatIntervalMs) && config.heartbeatIntervalMs >= 0)) {
+        errors.push("heartbeatIntervalMs must be an integer of at least 0 (ms)");
     }
     if (config.simulationThread !== undefined && !["worker", "main"].includes(config.simulationThread)) {
         errors.push('simulationThread must be "worker" or "main"');

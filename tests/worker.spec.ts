@@ -1,4 +1,4 @@
-import { firstValueFrom, lastValueFrom, toArray, of } from "rxjs";
+import { firstValueFrom, lastValueFrom, toArray, of, throwError } from "rxjs";
 import { ResultDTO, SimConfigDTO } from "aethon-arion-pipeline";
 import { C1 } from "aethon-arion-c1";
 import { Node } from "../src/classes/class.node";
@@ -107,5 +107,55 @@ describe("Node process ids", () => {
     it("differ between pm2 processes on one instance", () => {
         const ids = ["0", "1", "2", "3"].map((index) => Node.processSuffix({ ARION_NODE_INSTANCE: "i-1", NODE_APP_INSTANCE: index }, "h", 1));
         expect(new Set(ids).size).toBe(4);
+    });
+});
+
+describe("Node heartbeats", () => {
+    it("report the process's state, run progress, counters, memory and code version", async () => {
+        const node = new Node({ ...config, id: "fleet", simulationThread: "worker", heartbeatIntervalMs: 200 }, [C1]);
+        const heartbeats: any[] = [];
+        (node as any)._api = {
+            request$: (operationId: string, options: any) => {
+                if (operationId === "NodeController_heartbeat") { heartbeats.push(options.body); return of({ payload: { commands: [], expectedVersion: null } }); }
+                if (operationId === "SimConfigController_next") return of({ payload: job({ days: 20 } as any) });
+                if (operationId === "ResultController_create") return of({ payload: { id: 1 } });
+                throw new Error(operationId);
+            }
+        };
+        const subscription = node.start$().subscribe();
+        // heartbeats keep arriving while a run is in progress
+        for (let i = 0; i < 100 && !heartbeats.some((h) => h.state === "simulating" && h.run?.clockTick > 0); i++) {
+            await new Promise((resolve) => setTimeout(resolve, 100));
+        }
+        subscription.unsubscribe();
+        await node.close();
+        const during = heartbeats.find((h) => h.state === "simulating" && h.run?.clockTick > 0);
+        expect(during).toBeDefined();
+        expect(during.nodeId).toMatch(/^fleet:/);
+        expect(during.run).toEqual(jasmine.objectContaining({ runId: 70, simConfigId: 7 }));
+        expect(during.run.totalClockTicks).toBeGreaterThan(during.run.clockTick);
+        expect(during.memoryMb).toBeGreaterThan(0);
+        expect(during.version).toBe("dev"); // run from source in tests
+        expect(typeof during.startedAt).toBe("string");
+    }, 120000);
+
+    it("survive a server that does not answer, and note the version the server expects", async () => {
+        const node = new Node({ ...config, heartbeatIntervalMs: 1000 }, [C1]);
+        (node as any)._api = { request$: () => throwError(() => Object.assign(new Error("down"), { status: 503 })) };
+        expect(await firstValueFrom(node.heartbeat$())).toBeNull();
+        const warnings: any[] = [];
+        node.getLogger().getObservable$().subscribe((line: any) => { if (line.type === "warn") warnings.push(line.message); });
+        (node as any)._api = { request$: () => of({ payload: { commands: [], expectedVersion: "abc1234" } }) };
+        expect((await firstValueFrom(node.heartbeat$())).expectedVersion).toBe("abc1234");
+        expect(warnings.some((w) => /other code/.test(w.message))).toBe(true);
+    });
+
+    it("read the code version written by the build", () => {
+        const fs = require("fs"), os = require("os"), path = require("path");
+        const file = path.join(fs.mkdtempSync(path.join(os.tmpdir(), "v-")), "version.txt");
+        fs.writeFileSync(file, "abc1234\n");
+        expect(Node.codeVersion(file)).toBe("abc1234");
+        expect(Node.codeVersion(file + ".missing")).toBe("dev");
+        expect(() => new Node({ ...config, heartbeatIntervalMs: -1 }, [C1])).toThrowError(/heartbeatIntervalMs/);
     });
 });

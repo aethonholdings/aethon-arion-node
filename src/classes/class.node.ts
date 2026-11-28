@@ -1,9 +1,11 @@
 import { Logger, RandomStreamFactory, LogLine, Api, ResultDTO, SimConfigDTO, Model } from "aethon-arion-pipeline";
-import { Observable, catchError, concatMap, defer, exhaustMap, filter, finalize, interval, map, of, tap, throwError, retry, timer, timeout } from "rxjs";
+import { Observable, catchError, concatMap, defer, exhaustMap, filter, finalize, ignoreElements, interval, map, merge, of, tap, throwError, retry, timer, timeout } from "rxjs";
 import { NodeConfig, validateNodeConfig } from "../interfaces/node.interfaces";
 import { Logger as TSLogger } from "tslog";
 import { machineIdSync } from "node-machine-id";
 import os from "os";
+import fs from "fs";
+import path from "path";
 import { API, APIRequestOptions } from "aethon-api-types";
 import openApi from "../../swagger/swagger.json";
 import { RunEvent, WorkerSimulationRunner } from "./simulation-runner";
@@ -170,6 +172,9 @@ export class Node {
     private _totalRunMs: number = 0;
     private _lastError: string | null = null;
     private _startedAt: string = new Date().toISOString();
+    private _heartbeatIntervalMs: number;
+    private _expectedVersion: string | null = null;
+    private _version: string = Node.codeVersion();
 
     /**
      * Creates a new distributed simulation node.
@@ -262,6 +267,7 @@ export class Node {
         this._requestTimeoutMs = config.requestTimeoutMs ?? 30000;
         this._postTimeoutMs = config.postTimeoutMs ?? 120000;
         this._loopInterval = config.loopInterval;
+        this._heartbeatIntervalMs = config.heartbeatIntervalMs ?? 10000;
         // simulations run in a worker thread unless the configuration asks for the main thread
         this._runner =
             config.simulationThread === "worker"
@@ -281,8 +287,69 @@ export class Node {
      * programming error and never completes on its own.
      */
     start$(): Observable<boolean> {
-        this._log("Starting job loop", { loopInterval: this._loopInterval });
-        return this._loopObservable$.pipe(exhaustMap(() => this.runOnce$()));
+        this._log("Starting job loop", { loopInterval: this._loopInterval, heartbeatIntervalMs: this._heartbeatIntervalMs });
+        const loop$ = this._loopObservable$.pipe(exhaustMap(() => this.runOnce$()));
+        if (this._heartbeatIntervalMs <= 0) return loop$;
+        // heartbeats run beside the job loop (the main thread is free while a worker thread simulates)
+        const heartbeats$ = timer(0, this._heartbeatIntervalMs).pipe(exhaustMap(() => this.heartbeat$()), ignoreElements());
+        return merge(loop$, heartbeats$);
+    }
+
+    /**
+     * Sends one heartbeat: the process's status, memory and code version. Never errors (a failed heartbeat is only
+     * logged); emits the server's reply, or null.
+     */
+    heartbeat$(): Observable<any> {
+        const status = this.getStatus();
+        const body = {
+            nodeId: status.nodeId,
+            state: status.state,
+            run: status.run
+                ? {
+                      ...(status.run.runId !== undefined ? { runId: status.run.runId } : {}),
+                      ...(status.run.simConfigId !== undefined ? { simConfigId: status.run.simConfigId } : {}),
+                      clockTick: status.run.clockTick,
+                      totalClockTicks: status.run.totalClockTicks,
+                      startedAt: status.run.startedAt
+                  }
+                : null,
+            completedRuns: status.completedRuns,
+            failedRuns: status.failedRuns,
+            averageRunMs: status.averageRunMs,
+            lastError: status.lastError,
+            memoryMb: Math.round(process.memoryUsage().rss / 1048576),
+            version: this._version,
+            startedAt: status.startedAt
+        };
+        return defer(() => this._api.request$("NodeController_heartbeat", { body } as APIRequestOptions)).pipe(
+            timeout({ first: Math.max(5000, this._heartbeatIntervalMs) }),
+            map((response: any) => {
+                const reply = response?.payload ?? response;
+                const expected: string | null = reply?.expectedVersion ?? null;
+                if (expected && expected !== this._expectedVersion && expected !== this._version) {
+                    this._logger.warning({ sourceObject: this._name, message: "This node runs other code than the server expects", data: { running: this._version, expected } });
+                }
+                this._expectedVersion = expected;
+                return reply;
+            }),
+            catchError((error) => {
+                this._log("Heartbeat not delivered", { error: error?.message ?? String(error), status: error?.status });
+                return of(null);
+            })
+        );
+    }
+
+    /** The node code's git commit (dist/version.txt, written by the build), or "dev" when run from source. */
+    static codeVersion(file: string = path.join(__dirname, "..", "..", "version.txt")): string {
+        try {
+            return fs.readFileSync(file, "utf-8").trim() || "unknown";
+        } catch {
+            return "dev";
+        }
+    }
+
+    get version(): string {
+        return this._version;
     }
 
     /**
