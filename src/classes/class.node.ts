@@ -8,7 +8,7 @@ import fs from "fs";
 import path from "path";
 import { API, APIRequestOptions } from "aethon-api-types";
 import openApi from "../../swagger/swagger.json";
-import { RunEvent, WorkerSimulationRunner } from "./simulation-runner";
+import { RunCancelledError, RunEvent, WorkerSimulationRunner } from "./simulation-runner";
 
 /** What a node process is doing (reported to the server by heartbeats). */
 export type NodeState = "idle" | "requesting" | "simulating" | "posting" | "backing-off";
@@ -172,6 +172,7 @@ export class Node {
     private _run: NodeStatus["run"] = null;
     private _completedRuns: number = 0;
     private _failedRuns: number = 0;
+    private _cancelledRuns: number = 0;
     private _totalRunMs: number = 0;
     private _lastError: string | null = null;
     private _startedAt: string = new Date().toISOString();
@@ -345,6 +346,7 @@ export class Node {
                     this._logger.warning({ sourceObject: this._name, message: "This node runs other code than the server expects", data: { running: this._version, expected } });
                 }
                 this._expectedVersion = expected;
+                this._handleCommands(reply?.commands);
                 return reply;
             }),
             catchError((error) => {
@@ -352,6 +354,21 @@ export class Node {
                 return of(null);
             })
         );
+    }
+
+    /** Carries out the commands in a heartbeat reply: cancel stops the run in progress when it is the one named. */
+    private _handleCommands(commands: any[] | undefined): void {
+        for (const command of Array.isArray(commands) ? commands : []) {
+            if (command?.type === "cancel" && this._run && command.runId === this._run.runId) {
+                this._log("Cancelling run", { runId: command.runId, reason: command.reason });
+                void this.cancelRun(command.reason);
+            }
+        }
+    }
+
+    /** Runs cancelled because the server no longer needed them. */
+    get cancelledRuns(): number {
+        return this._cancelledRuns;
     }
 
     /** Milliseconds to wait before the next job request (see start$). */
@@ -398,6 +415,12 @@ export class Node {
                     // keep failing (otherwise every node would be handed the same failing job forever)
                     return this.simulate$(response).pipe(
                         catchError((error) => {
+                            // a run the server no longer needs: neither a failure nor a result
+                            if (error instanceof RunCancelledError) {
+                                this._cancelledRuns++;
+                                this._log("Run cancelled", { runId: response.runId, reason: error.message });
+                                return of(null);
+                            }
                             this._failedRuns++;
                             this._lastError = error?.message ?? String(error);
                             return this._reportFailure$(response, error).pipe(map(() => null));

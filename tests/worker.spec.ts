@@ -212,3 +212,47 @@ describe("Node backoff (step 2.1)", () => {
         expect(() => new Node({ ...config, backoffBaseMs: 0 }, [C1])).toThrowError(/backoffBaseMs/);
     });
 });
+
+describe("Node run cancellation (step 2.3)", () => {
+    it("stops a run the server no longer needs, without reporting a failure, and takes the next job", async () => {
+        const node = new Node({ ...config, simulationThread: "worker", heartbeatIntervalMs: 200, loopInterval: 100 }, [C1]);
+        const calls: string[] = [];
+        let jobs = 0;
+        (node as any)._api = {
+            request$: (operationId: string, options: any) => {
+                calls.push(operationId);
+                if (operationId === "SimConfigController_next") return of({ payload: ++jobs === 1 ? job({ days: 200 } as any) : null });
+                if (operationId === "NodeController_heartbeat") {
+                    // the server answers a heartbeat about run 70 mid-run with a cancel
+                    const run = options.body.run;
+                    return of({ payload: { commands: run?.runId === 70 && run.clockTick > 0 ? [{ type: "cancel", runId: 70, reason: "its simulation configuration has converged" }] : [], expectedVersion: null } });
+                }
+                if (operationId === "RunController_fail") return of({ payload: {} });
+                return of({ payload: { id: 1 } });
+            }
+        };
+        const t0 = Date.now();
+        const subscription = node.start$().subscribe();
+        while (node.cancelledRuns === 0 && Date.now() - t0 < 60000) await new Promise((resolve) => setTimeout(resolve, 50));
+        while (jobs < 2 && Date.now() - t0 < 60000) await new Promise((resolve) => setTimeout(resolve, 50));
+        subscription.unsubscribe();
+        await node.close();
+        expect(node.cancelledRuns).toBe(1);
+        expect(Date.now() - t0).toBeLessThan(30000); // a 200-day run, cut short
+        expect(calls).not.toContain("RunController_fail");
+        expect(calls).not.toContain("ResultController_create");
+        expect(node.getStatus().failedRuns).toBe(0);
+        expect(jobs).toBeGreaterThanOrEqual(2); // asked for the next job
+    }, 90000);
+
+    it("ignores a cancel for another run", async () => {
+        const node = new Node({ ...config, simulationThread: "worker" }, [C1]);
+        (node as any)._run = { runId: 1, clockTick: 0, totalClockTicks: 10, startedAt: "" };
+        const spy = spyOn(node, "cancelRun").and.returnValue(Promise.resolve(true));
+        (node as any)._handleCommands([{ type: "cancel", runId: 2 }, { type: "unknown" }]);
+        expect(spy).not.toHaveBeenCalled();
+        (node as any)._handleCommands([{ type: "cancel", runId: 1, reason: "x" }]);
+        expect(spy).toHaveBeenCalledWith("x");
+        await node.close();
+    });
+});
