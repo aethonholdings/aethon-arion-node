@@ -3,6 +3,7 @@ import { Observable, catchError, concatMap, defer, exhaustMap, filter, finalize,
 import { NodeConfig, validateNodeConfig } from "../interfaces/node.interfaces";
 import { Logger as TSLogger } from "tslog";
 import { machineIdSync } from "node-machine-id";
+import os from "os";
 import { API, APIRequestOptions } from "aethon-api-types";
 import openApi from "../../swagger/swagger.json";
 import { RunEvent, WorkerSimulationRunner } from "./simulation-runner";
@@ -179,7 +180,7 @@ export class Node {
      * **Identity Generation:**
      * - Machine ID: Either from config or hardware-based via `machineIdSync()`
      * - Instance ID: Random 6-digit number (100000-999999)
-     * - Node ID: Composite `machineId:instanceId` for cluster-wide uniqueness
+     * - Node ID: `machineId:instance:processIndex` (see {@link Node.processSuffix}), unique per process
      *
      * **API Client Setup:**
      * - Constructs API client with protocol, host, port, basePath
@@ -253,7 +254,7 @@ export class Node {
         if (auth?.key) this._api.setHeader("Authorization", `Bearer ${auth.key}`);
         this._machineId = Node.machineId(config);
         this._models = models;
-        this._instanceId = Math.floor(100000 + Math.random() * 900000).toString();
+        this._instanceId = Node.processSuffix();
         this._id = this._machineId + ":" + this._instanceId;
         this._log("Initialising node", { nodeId: this._id });
         // a cap: false disables state space recording even when a simConfig asks for it
@@ -460,6 +461,18 @@ export class Node {
 
     getLog$(): Observable<LogLine> {
         return this._logger.getObservable$();
+    }
+
+    /**
+     * The process part of the node id, `<instance>:<process index>`: the instance is ARION_NODE_INSTANCE (the EC2
+     * instance id, set by deploy/aws/node-setup.sh) or the host name; the process index is pm2's NODE_APP_INSTANCE,
+     * or the process id when the node is not run by pm2. Unique per process, and tells which machine a process is on.
+     */
+    static processSuffix(env: NodeJS.ProcessEnv = process.env, hostname: string = os.hostname(), pid: number = process.pid): string {
+        const clean = (value: string) => value.replace(/[^A-Za-z0-9._-]/g, "-").slice(0, 80);
+        const instance = clean(env.ARION_NODE_INSTANCE || hostname || "host");
+        const index = env.NODE_APP_INSTANCE !== undefined && env.NODE_APP_INSTANCE !== "" ? clean(env.NODE_APP_INSTANCE) : `p${pid}`;
+        return `${instance}:${index}`;
     }
 
     /** The machine id the node's key is bound to: `config.id`, else the hardware-based machine id. */

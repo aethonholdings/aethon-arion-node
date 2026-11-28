@@ -93,3 +93,19 @@ describe("Node with simulationThread: worker", () => {
         expect(() => new Node({ ...config, simulationThread: "gpu" } as any, [C1])).toThrowError(/simulationThread/);
     });
 });
+
+describe("Node process ids", () => {
+    it("are <machine id>:<instance>:<process index>, from the environment, pm2 and the host", () => {
+        expect(Node.processSuffix({ ARION_NODE_INSTANCE: "i-0abc", NODE_APP_INSTANCE: "2" }, "host", 99)).toBe("i-0abc:2");
+        expect(Node.processSuffix({ NODE_APP_INSTANCE: "0" }, "mini-2.local", 99)).toBe("mini-2.local:0");
+        expect(Node.processSuffix({}, "mini-2.local", 4321)).toBe("mini-2.local:p4321"); // not run by pm2
+        expect(Node.processSuffix({ ARION_NODE_INSTANCE: "bad:id/x" }, "h", 1)).toBe("bad-id-x:p1"); // no extra separators
+        const node = new Node({ ...config, id: "fleet" }, [C1]);
+        expect(node.getStatus().nodeId).toMatch(/^fleet:[A-Za-z0-9._-]+:[A-Za-z0-9._-]+$/);
+    });
+
+    it("differ between pm2 processes on one instance", () => {
+        const ids = ["0", "1", "2", "3"].map((index) => Node.processSuffix({ ARION_NODE_INSTANCE: "i-1", NODE_APP_INSTANCE: index }, "h", 1));
+        expect(new Set(ids).size).toBe(4);
+    });
+});
