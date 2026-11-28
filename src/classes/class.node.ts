@@ -13,7 +13,7 @@ import { spotInterruptionNotice } from "./spot-watch";
 import { ResultBuffer, defaultResultBufferDir } from "./result-buffer";
 
 /** What a node process is doing (reported to the server by heartbeats). */
-export type NodeState = "idle" | "requesting" | "simulating" | "posting" | "backing-off" | "draining";
+export type NodeState = "idle" | "requesting" | "simulating" | "posting" | "backing-off" | "draining" | "paused" | "drained";
 
 /** A node process's activity: its state, the run in progress and counters since it started. */
 export interface NodeStatus {
@@ -180,6 +180,10 @@ export class Node {
     private _spotCheckMs: number;
     private _buffer: ResultBuffer | null;
     private _recycle: string | null = null;
+    // remote commands (node plan step 3.1): a hold stops the loop from taking work until resumed
+    private _hold: "paused" | "drained" | null = null;
+    private _pendingAcks: { commandId: number; ok: boolean; message?: string }[] = [];
+    private _seenCommands = new Set<number>();
     private _consecutiveFailures: number = 0;
     private _maxConsecutiveFailures: number;
     private _maxRssMb: number;
@@ -313,7 +317,7 @@ export class Node {
         // one job at a time: the next request follows at once after a recorded result, after loopInterval when there
         // was no work, and after an exponential backoff with jitter after errors (so that many processes do not
         // retry in step against a struggling server). A draining node stops asking (the loop completes).
-        const loop$ = defer(() => (this._draining ? EMPTY : this.runOnce$())).pipe(
+        const loop$ = defer(() => (this._draining ? EMPTY : this._hold ? of(false) : this.runOnce$())).pipe(
             repeat({
                 delay: () => {
                     if (this._draining) return EMPTY;
@@ -358,20 +362,25 @@ export class Node {
         this._draining = reason;
         this._state = "draining";
         this._logger.warning({ sourceObject: this._name, message: "Draining", data: { reason } });
+        await this._cancelAndRelease(reason);
+    }
+
+    /** Cancels the run in progress (worker thread) and releases it to the server, which hands it out again at once. */
+    private async _cancelAndRelease(reason: string): Promise<void> {
         const runId = this._run?.runId;
-        if (await this.cancelRun(reason)) this._log("Run cancelled for draining", { runId });
-        if (runId !== undefined) {
-            try {
-                await new Promise((resolve) =>
-                    this._api
-                        .request$("RunController_release", { params: { id: runId }, body: { nodeId: this._id } } as APIRequestOptions)
-                        .pipe(timeout({ first: 10000 }))
-                        .subscribe({ next: resolve, error: resolve, complete: () => resolve(null) })
-                );
-                this._log("Run released", { runId });
-            } catch {
-                // best effort: the lease expires anyway
-            }
+        if (!(await this.cancelRun(reason))) return; // nothing running, or a main-thread run (it finishes and is posted)
+        this._log("Run cancelled", { runId, reason });
+        if (runId === undefined) return;
+        try {
+            await new Promise((resolve) =>
+                this._api
+                    .request$("RunController_release", { params: { id: runId }, body: { nodeId: this._id } } as APIRequestOptions)
+                    .pipe(timeout({ first: 10000 }))
+                    .subscribe({ next: resolve, error: resolve, complete: () => resolve(null) })
+            );
+            this._log("Run released", { runId });
+        } catch {
+            // best effort: the lease expires anyway
         }
     }
 
@@ -422,8 +431,10 @@ export class Node {
             lastError: status.lastError,
             memoryMb: Math.round(process.memoryUsage().rss / 1048576),
             version: this._version,
-            startedAt: status.startedAt
+            startedAt: status.startedAt,
+            ...(this._pendingAcks.length > 0 ? { acks: [...this._pendingAcks] } : {})
         };
+        const sentAcks = this._pendingAcks.length;
         return defer(() => this._api.request$("NodeController_heartbeat", { body } as APIRequestOptions)).pipe(
             timeout({ first: Math.max(5000, this._heartbeatIntervalMs) }),
             map((response: any) => {
@@ -433,6 +444,7 @@ export class Node {
                     this._logger.warning({ sourceObject: this._name, message: "This node runs other code than the server expects", data: { running: this._version, expected } });
                 }
                 this._expectedVersion = expected;
+                this._pendingAcks.splice(0, sentAcks); // delivered with this heartbeat
                 this._handleCommands(reply?.commands);
                 return reply;
             }),
@@ -443,14 +455,93 @@ export class Node {
         );
     }
 
-    /** Carries out the commands in a heartbeat reply: cancel stops the run in progress when it is the one named. */
+    /**
+     * Carries out the commands in a heartbeat reply. cancel stops the run in progress when it is the one named; the
+     * remote commands from the Monitor (node plan step 3.1) are carried out once each and acknowledged in the next
+     * heartbeat (a command resent before its acknowledgement arrived is only acknowledged again):
+     *
+     * - pause: the run in progress finishes and is posted, then no more work until resume
+     * - drain: the run in progress is cancelled and released to the server, then no more work until resume
+     * - resume: takes work again
+     * - restart: the run in progress is cancelled and released, the acknowledgement is sent, and the process exits
+     *   for its process manager (pm2) to start it again
+     * - set-processes: process 0 of the instance runs `pm2 scale <app> <n>`; the other processes leave it to it
+     */
     private _handleCommands(commands: any[] | undefined): void {
         for (const command of Array.isArray(commands) ? commands : []) {
-            if (command?.type === "cancel" && this._run && command.runId === this._run.runId) {
-                this._log("Cancelling run", { runId: command.runId, reason: command.reason });
-                void this.cancelRun(command.reason);
+            if (command?.type === "cancel") {
+                if (this._run && command.runId === this._run.runId) {
+                    this._log("Cancelling run", { runId: command.runId, reason: command.reason });
+                    void this.cancelRun(command.reason);
+                }
+                continue;
             }
+            if (!Number.isInteger(command?.id)) continue;
+            if (this._seenCommands.has(command.id)) {
+                this._ack(command.id, true, "already carried out");
+                continue;
+            }
+            this._seenCommands.add(command.id);
+            void this._carryOut(command).then(
+                (message) => this._ack(command.id, true, message),
+                (error) => this._ack(command.id, false, error?.message ?? String(error))
+            );
         }
+    }
+
+    private _ack(commandId: number, ok: boolean, message?: string): void {
+        this._pendingAcks = this._pendingAcks.filter((a) => a.commandId !== commandId);
+        this._pendingAcks.push({ commandId, ok, ...(message ? { message: message.slice(0, 500) } : {}) });
+    }
+
+    /** Carries out one remote command; resolves with a note for the acknowledgement, rejects when it cannot. */
+    private async _carryOut(command: { id: number; type: string; args?: any }): Promise<string | undefined> {
+        this._logger.warning({ sourceObject: this._name, message: "Remote command", data: command });
+        switch (command.type) {
+            case "pause":
+                this._hold = "paused";
+                return this._run ? "pausing after the run in progress" : undefined;
+            case "drain":
+                this._hold = "drained";
+                await this._cancelAndRelease("drained from the Monitor");
+                return undefined;
+            case "resume":
+                this._hold = null;
+                return undefined;
+            case "restart":
+                await this._cancelAndRelease("restart requested from the Monitor");
+                this._ack(command.id, true, "restarting");
+                await new Promise((resolve) => this.heartbeat$().subscribe({ complete: () => resolve(null), error: () => resolve(null) }));
+                this._recycle = "restart requested from the Monitor";
+                this._draining = this._recycle;
+                this._stopped$.next(); // ends the wait before the next job, so that start$ completes now
+                return "restarting";
+            case "set-processes":
+                return await this._setProcesses(command.args?.processes);
+            default:
+                throw new Error(`unknown command ${command.type}`);
+        }
+    }
+
+    /** Scales this instance's node processes with pm2 (process 0 only). */
+    private async _setProcesses(processes: number): Promise<string> {
+        if (!Number.isInteger(processes) || processes < 1) throw new Error("processes must be a positive whole number");
+        if (process.env.pm_id === undefined) throw new Error("not running under pm2");
+        const index = process.env.NODE_APP_INSTANCE ?? "0";
+        if (index !== "0") return "left to process 0 of the instance";
+        const app = process.env.name || "arion-node";
+        const { execFile } = await import("child_process");
+        await new Promise<void>((resolve, reject) =>
+            execFile("pm2", ["scale", app, String(processes)], { timeout: 60000 }, (error, _stdout, stderr) =>
+                error ? reject(new Error(`pm2 scale failed: ${String(stderr || error.message).trim().slice(0, 300)}`)) : resolve()
+            )
+        );
+        return `scaled ${app} to ${processes} processes`;
+    }
+
+    /** The hold set by a remote pause or drain, or null. */
+    get hold(): "paused" | "drained" | null {
+        return this._hold;
     }
 
     /** Runs cancelled because the server no longer needed them. */
@@ -584,7 +675,7 @@ export class Node {
     getStatus(): NodeStatus {
         return {
             nodeId: this._id,
-            state: this._draining ? "draining" : this._state,
+            state: this._draining ? "draining" : this._hold && this._state === "idle" ? this._hold : this._state,
             run: this._run ? { ...this._run } : null,
             completedRuns: this._completedRuns,
             failedRuns: this._failedRuns,

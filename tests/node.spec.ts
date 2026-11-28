@@ -243,3 +243,86 @@ describe("Self-check (step 2.6)", () => {
         expect(validateNodeConfig({ ...config, maxRssMb: -1 }).length).toBe(1);
     });
 });
+
+describe("Remote commands (step 3.1)", () => {
+    const reply = (commands: any[]) => of({ payload: { commands, expectedVersion: null } });
+
+    it("pauses and resumes, carries each command out once and acknowledges it in the next heartbeat", async () => {
+        const node = new Node({ ...config, resultBufferDir: false, heartbeatIntervalMs: 0 }, [C1]);
+        const sent: any[] = [];
+        let commands: any[] = [];
+        const calls = stubApi(node, {
+            NodeController_heartbeat: (options: any) => (sent.push(options.body), reply(commands)),
+            SimConfigController_next: () => of({ payload: null })
+        });
+        commands = [{ type: "pause", id: 11 }];
+        await lastValueFrom(node.heartbeat$());
+        await new Promise((resolve) => setTimeout(resolve, 0));
+        expect(node.hold).toBe("paused");
+        expect(node.getStatus().state).toBe("paused");
+        // the paused loop takes no work
+        const loop = node.start$().subscribe();
+        await new Promise((resolve) => setTimeout(resolve, 350));
+        expect(calls["SimConfigController_next"]).toBeUndefined();
+        // the resent command (acknowledgement not yet received) is not carried out twice; both acks go out
+        commands = [{ type: "pause", id: 11 }, { type: "resume", id: 12 }];
+        await lastValueFrom(node.heartbeat$());
+        await new Promise((resolve) => setTimeout(resolve, 0));
+        expect(sent[sent.length - 1].acks).toEqual([{ commandId: 11, ok: true }]);
+        expect(node.hold).toBeNull();
+        commands = [];
+        await lastValueFrom(node.heartbeat$());
+        expect(sent[sent.length - 1].acks).toEqual([{ commandId: 11, ok: true, message: "already carried out" }, { commandId: 12, ok: true }]);
+        await lastValueFrom(node.heartbeat$());
+        expect(sent[sent.length - 1].acks).toBeUndefined(); // acknowledged once delivered
+        await new Promise((resolve) => setTimeout(resolve, 350));
+        expect(calls["SimConfigController_next"]).toBeGreaterThan(0); // resumed: takes work again
+        loop.unsubscribe();
+    });
+
+    it("restarts: sends the acknowledgement, then the job loop ends with a recycle reason", async () => {
+        const node = new Node({ ...config, resultBufferDir: false, heartbeatIntervalMs: 0 }, [C1]);
+        const sent: any[] = [];
+        let commands: any[] = [];
+        stubApi(node, {
+            NodeController_heartbeat: (options: any) => (sent.push(options.body), reply(commands)),
+            SimConfigController_next: () => of({ payload: null })
+        });
+        let completed = false;
+        node.start$().subscribe({ complete: () => (completed = true) });
+        commands = [{ type: "restart", id: 21 }];
+        await lastValueFrom(node.heartbeat$());
+        commands = [];
+        for (let i = 0; i < 40 && !completed; i++) await new Promise((resolve) => setTimeout(resolve, 50));
+        expect(completed).toBe(true);
+        expect(node.recycle).toBe("restart requested from the Monitor");
+        expect(sent.some((b) => (b.acks ?? []).some((a: any) => a.commandId === 21 && a.ok))).toBe(true);
+    });
+
+    it("refuses set-processes outside pm2 and leaves it to process 0 under pm2", async () => {
+        const node = new Node({ ...config, resultBufferDir: false }, [C1]);
+        const sent: any[] = [];
+        let commands: any[] = [{ type: "set-processes", id: 31, args: { processes: 2 } }];
+        stubApi(node, { NodeController_heartbeat: (options: any) => (sent.push(options.body), reply(commands)) });
+        const saved = { pm_id: process.env.pm_id, NODE_APP_INSTANCE: process.env.NODE_APP_INSTANCE };
+        try {
+            delete process.env.pm_id;
+            await lastValueFrom(node.heartbeat$());
+            await new Promise((resolve) => setTimeout(resolve, 10));
+            process.env.pm_id = "3";
+            process.env.NODE_APP_INSTANCE = "1";
+            commands = [{ type: "set-processes", id: 32, args: { processes: 2 } }, { type: "explode", id: 33 }];
+            await lastValueFrom(node.heartbeat$());
+            await new Promise((resolve) => setTimeout(resolve, 10));
+            commands = [];
+            await lastValueFrom(node.heartbeat$());
+            expect(sent.flatMap((b) => b.acks ?? []).sort((a: any, b: any) => a.commandId - b.commandId)).toEqual([
+                { commandId: 31, ok: false, message: "not running under pm2" },
+                { commandId: 32, ok: true, message: "left to process 0 of the instance" },
+                { commandId: 33, ok: false, message: "unknown command explode" }
+            ]);
+        } finally {
+            for (const [k, v] of Object.entries(saved)) v === undefined ? delete process.env[k] : (process.env[k] = v);
+        }
+    });
+});
