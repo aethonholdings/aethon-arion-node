@@ -17,6 +17,8 @@ export interface NodeConfig {
     requestTimeoutMs?: number;
     /** Timeout for result posts in ms (default 120000). */
     postTimeoutMs?: number;
+    /** Where simulations run: "worker" (a worker thread, keeping the node responsive during a run) or "main" (default). */
+    simulationThread?: "worker" | "main";
 }
 
 /** Validates a node configuration and returns the list of problems found (empty when valid). */
@@ -34,6 +36,9 @@ export function validateNodeConfig(config: NodeConfig): string[] {
         if (config[key] !== undefined && !(Number.isInteger(config[key]) && (config[key] as number) > 0)) {
             errors.push(`${key} must be a positive integer (ms)`);
         }
+    }
+    if (config.simulationThread !== undefined && !["worker", "main"].includes(config.simulationThread)) {
+        errors.push('simulationThread must be "worker" or "main"');
     }
     return errors;
 }

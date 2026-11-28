@@ -1,8 +1,7 @@
 import fs from "fs";
 import { NodeConfig } from "./interfaces/node.interfaces";
 import { Node } from "./classes/class.node";
-import { Model } from "aethon-arion-pipeline";
-import { C1 } from "aethon-arion-c1";
+import { models } from "./models";
 import { Subscription } from "rxjs";
 import { resolveConfigPath } from "./bootstrap";
 import { credentialsPath, loadCredentials, NodeCredentials, saveCredentials, withServer } from "./auth/credentials";
@@ -55,8 +54,8 @@ async function main(): Promise<void> {
 
     let node: Node;
     try {
-        const models: Model[] = [C1];
-        node = new Node(withServer(config, credentials.serverUrl), models, { key: credentials.key });
+        // simulations run in a worker thread unless the configuration says otherwise
+        node = new Node({ simulationThread: "worker", ...withServer(config, credentials.serverUrl) }, models, { key: credentials.key });
     } catch (error) {
         // fatal: bad configuration
         fail(`Failed to start the node with configuration ${configPath}: ${error instanceof Error ? error.message : error}`);
@@ -77,8 +76,10 @@ async function main(): Promise<void> {
     const shutdown = (signal: string) => {
         node.getLogger().info({ sourceObject: "Main", message: `Received ${signal}, shutting down gracefully...` });
         subscription.unsubscribe();
-        node.getLogger().info({ sourceObject: "Main", message: "Shutdown complete" });
-        process.exit(0);
+        void node.close().finally(() => {
+            node.getLogger().info({ sourceObject: "Main", message: "Shutdown complete" });
+            process.exit(0);
+        });
     };
     process.on("SIGTERM", () => shutdown("SIGTERM"));
     process.on("SIGINT", () => shutdown("SIGINT"));

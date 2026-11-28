@@ -16,6 +16,7 @@ The node reads `config/arion.config.node.json` from the package root, or the pat
 | `saveStateSpace` | Cap: `false` disables state space recording even when a simulation configuration requests it (default `true`) |
 | `requestTimeoutMs`, `postTimeoutMs` | HTTP timeouts in ms (defaults 30000 and 120000) |
 | `verbose`, `id` | Logging, machine id override (the node's key is bound to the machine id) |
+| `simulationThread` | `worker` (default when started with `npm start`): simulations run in a worker thread, so the node stays responsive during a run and a run can be cancelled; `main`: in the main thread |
 
 Each job is simulated with random streams derived from `(simConfig id, runIndex)`, so runs are distinct across nodes and reproducible. Failed requests are retried on the next tick. Result posts are retried only on network errors, timeouts, 5xx and 429, and are idempotent on the server. An invalid configuration exits with code 1.
 

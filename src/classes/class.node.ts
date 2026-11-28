@@ -1,10 +1,26 @@
 import { Logger, RandomStreamFactory, LogLine, Api, ResultDTO, SimConfigDTO, Model } from "aethon-arion-pipeline";
-import { Observable, catchError, concatMap, defer, exhaustMap, interval, map, of, throwError, retry, timer, timeout } from "rxjs";
+import { Observable, catchError, concatMap, defer, exhaustMap, filter, finalize, interval, map, of, tap, throwError, retry, timer, timeout } from "rxjs";
 import { NodeConfig, validateNodeConfig } from "../interfaces/node.interfaces";
 import { Logger as TSLogger } from "tslog";
 import { machineIdSync } from "node-machine-id";
 import { API, APIRequestOptions } from "aethon-api-types";
 import openApi from "../../swagger/swagger.json";
+import { RunEvent, WorkerSimulationRunner } from "./simulation-runner";
+
+/** What a node process is doing (reported to the server by heartbeats). */
+export type NodeState = "idle" | "requesting" | "simulating" | "posting";
+
+/** A node process's activity: its state, the run in progress and counters since it started. */
+export interface NodeStatus {
+    nodeId: string;
+    state: NodeState;
+    run: { runId?: number; simConfigId?: number; clockTick: number; totalClockTicks: number; startedAt: string } | null;
+    completedRuns: number;
+    failedRuns: number;
+    averageRunMs: number | null;
+    lastError: string | null;
+    startedAt: string;
+}
 
 /**
  * Distributed simulation node for executing multi-agent organizational simulations.
@@ -145,6 +161,14 @@ export class Node {
     private _counter: number = 0;
     private _counterDiv: number = 1000;
     private _models: Model[];
+    private _runner: WorkerSimulationRunner | null;
+    private _state: NodeState = "idle";
+    private _run: NodeStatus["run"] = null;
+    private _completedRuns: number = 0;
+    private _failedRuns: number = 0;
+    private _totalRunMs: number = 0;
+    private _lastError: string | null = null;
+    private _startedAt: string = new Date().toISOString();
 
     /**
      * Creates a new distributed simulation node.
@@ -237,6 +261,11 @@ export class Node {
         this._requestTimeoutMs = config.requestTimeoutMs ?? 30000;
         this._postTimeoutMs = config.postTimeoutMs ?? 120000;
         this._loopInterval = config.loopInterval;
+        // simulations run in a worker thread unless the configuration asks for the main thread
+        this._runner =
+            config.simulationThread === "worker"
+                ? new WorkerSimulationRunner((level, sourceObject, message, data) => this._workerLog(level, sourceObject, message, data))
+                : null;
         this._loopObservable$ = interval(this._loopInterval);
         this._log("Node initialised");
     }
@@ -262,6 +291,7 @@ export class Node {
     runOnce$(): Observable<boolean> {
         this._log("Requesting job");
         this._counter = 0;
+        this._state = "requesting";
         return this._getNext$().pipe(
             concatMap((response: SimConfigDTO) => {
                 if (response !== null && response !== undefined && response.id && response.orgConfig) {
@@ -269,7 +299,11 @@ export class Node {
                     // a run that fails here is reported to the server, which stops dispatching a simConfig whose runs
                     // keep failing (otherwise every node would be handed the same failing job forever)
                     return this.simulate$(response).pipe(
-                        catchError((error) => this._reportFailure$(response, error).pipe(map(() => null)))
+                        catchError((error) => {
+                            this._failedRuns++;
+                            this._lastError = error?.message ?? String(error);
+                            return this._reportFailure$(response, error).pipe(map(() => null));
+                        })
                     );
                 }
                 this._log("No job received - retrying");
@@ -277,6 +311,7 @@ export class Node {
             }),
             concatMap((result: ResultDTO | null) => {
                 if (result === null || result === undefined) return of(false);
+                this._state = "posting";
                 this._log("Posting results", {
                     simConfigId: result.simConfigId,
                     runId: result.runId,
@@ -285,6 +320,7 @@ export class Node {
                 return this._postResult$(result).pipe(
                     map((response: any) => {
                         this._log("Result recorded", { resultId: response?.payload?.id ?? response?.id });
+                        this._completedRuns++;
                         return true;
                     })
                 );
@@ -302,13 +338,49 @@ export class Node {
                             )
                     );
                 }
+                this._lastError = error?.message ? error.message : String(error || "Unknown error");
                 this._log("Error processing job", {
-                    error: error?.message ? error.message : String(error || "Unknown error"),
+                    error: this._lastError,
                     status: error?.status
                 });
                 return of(false);
+            }),
+            finalize(() => {
+                this._state = "idle";
+                this._run = null;
             })
         );
+    }
+
+    /** The node process's activity (state, run in progress with its progress, counters). */
+    getStatus(): NodeStatus {
+        return {
+            nodeId: this._id,
+            state: this._state,
+            run: this._run ? { ...this._run } : null,
+            completedRuns: this._completedRuns,
+            failedRuns: this._failedRuns,
+            averageRunMs: this._completedRuns > 0 ? Math.round(this._totalRunMs / this._completedRuns) : null,
+            lastError: this._lastError,
+            startedAt: this._startedAt
+        };
+    }
+
+    /** Cancels the run in progress (worker thread only; a main-thread run cannot be interrupted). */
+    cancelRun(reason?: string): Promise<boolean> {
+        return this._runner ? this._runner.cancel(reason) : Promise.resolve(false);
+    }
+
+    /** Stops the simulation worker, if any. */
+    close(): Promise<void> {
+        return this._runner ? this._runner.close() : Promise.resolve();
+    }
+
+    private _workerLog(level: string, sourceObject: string, message: string, data?: any): void {
+        const line = { sourceObject: sourceObject ?? "Worker", message, data };
+        if (level === "error" || level === "fatal") this._logger.error(line);
+        else if (level === "warn") this._logger.warning(line);
+        else this._logger.trace(line);
     }
 
     /**
@@ -328,6 +400,29 @@ export class Node {
             return of(null);
         }
         const saveStateSpace: boolean = simConfigDTO.saveStateSpace === true && this._saveStateSpace !== false;
+        const started = Date.now();
+        this._state = "simulating";
+        this._run = { runId: simConfigDTO.runId, simConfigId: simConfigDTO.id, clockTick: 0, totalClockTicks: 0, startedAt: new Date(started).toISOString() };
+        const progress = (clockTick: number, totalClockTicks: number) => {
+            if (this._run) {
+                this._run.clockTick = clockTick;
+                this._run.totalClockTicks = totalClockTicks;
+            }
+        };
+        const done = (result: ResultDTO | null) => {
+            if (result) this._totalRunMs += Date.now() - started;
+        };
+        if (this._runner) {
+            // worker thread: the main thread stays free while the run executes
+            return this._runner.run$(simConfigDTO, this._id, saveStateSpace, this._verbose).pipe(
+                tap((event: RunEvent) => {
+                    if (event.type === "progress") progress(event.clockTick, event.totalClockTicks);
+                }),
+                filter((event: RunEvent): event is Extract<RunEvent, { type: "result" }> => event.type === "result"),
+                map((event) => event.result),
+                tap(done)
+            );
+        }
         // defer: a synchronous throw while building the simulation (e.g. an invalid horizon) becomes an error of
         // this job rather than of the loop
         return defer(() =>
@@ -336,9 +431,10 @@ export class Node {
                 this.createRandomStreamFactory(simConfigDTO),
                 this._logger,
                 this._id,
-                saveStateSpace
+                saveStateSpace,
+                (clockTick: number, totalClockTicks: number) => progress(clockTick + 1, totalClockTicks)
             )
-        );
+        ).pipe(tap(done));
     }
 
     /** Creates the random stream factory for one run of a simConfig (see {@link simulate$}). */
