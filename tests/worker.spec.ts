@@ -159,3 +159,56 @@ describe("Node heartbeats", () => {
         expect(() => new Node({ ...config, heartbeatIntervalMs: -1 }, [C1])).toThrowError(/heartbeatIntervalMs/);
     });
 });
+
+describe("Node backoff (step 2.1)", () => {
+    it("doubles the wait after each consecutive error, with jitter between half and one and a half times, up to a cap", () => {
+        const at = (r: number) => () => r;
+        expect([1, 2, 3, 4, 5, 6].map((k) => Node.backoffDelay(k, 2000, 60000, at(0.5)))).toEqual([2000, 4000, 8000, 16000, 32000, 60000]);
+        expect(Node.backoffDelay(1, 2000, 60000, at(0))).toBe(1000);
+        expect(Node.backoffDelay(1, 2000, 60000, at(0.999999))).toBe(3000);
+        expect(Node.backoffDelay(30, 2000, 60000, at(0.5))).toBe(60000);
+    });
+
+    it("asks again at once after a result, after the poll interval with no work, and backs off after errors", async () => {
+        const node = new Node({ ...config, loopInterval: 300, backoffBaseMs: 200, heartbeatIntervalMs: 0 }, [C1]);
+        let call = 0;
+        // requests: error, error, no work, a job (recorded), no work
+        (node as any)._api = {
+            request$: (operationId: string) => {
+                if (operationId === "ResultController_create") return of({ payload: { id: 1 } });
+                call++;
+                if (call <= 2) return throwError(() => Object.assign(new Error("down"), { status: 503 }));
+                if (call === 4) return of({ payload: job() });
+                return of({ payload: null });
+            }
+        };
+        // the delay chosen after each request, and the state while waiting
+        const delays: number[] = [];
+        const states: string[] = [];
+        const original = node.nextDelay.bind(node);
+        (node as any).nextDelay = (random?: () => number) => {
+            const delay = original(random);
+            delays.push(delay);
+            setTimeout(() => states.push(node.getStatus().state), 0);
+            return delay;
+        };
+        const t0 = Date.now();
+        const subscription = node.start$().subscribe();
+        while (delays.length < 5) await new Promise((resolve) => setTimeout(resolve, 20));
+        subscription.unsubscribe();
+        expect(delays[0]).toBeGreaterThanOrEqual(100); // after error 1: 200 x U(0.5, 1.5)
+        expect(delays[0]).toBeLessThanOrEqual(300);
+        expect(delays[1]).toBeGreaterThanOrEqual(200); // after error 2: 400 x U(0.5, 1.5)
+        expect(delays[1]).toBeLessThanOrEqual(600);
+        expect(delays[2]).toBe(300); // no work: the poll interval
+        expect(delays[3]).toBe(0); // after a recorded result: at once
+        expect(delays[4]).toBe(300);
+        expect(states.slice(0, 2)).toEqual(["backing-off", "backing-off"]);
+        expect(states[2]).toBe("idle");
+        expect(Date.now() - t0).toBeGreaterThanOrEqual(delays[0] + delays[1] + delays[2]); // the waits happened
+    }, 60000);
+
+    it("rejects an invalid backoff setting", () => {
+        expect(() => new Node({ ...config, backoffBaseMs: 0 }, [C1])).toThrowError(/backoffBaseMs/);
+    });
+});

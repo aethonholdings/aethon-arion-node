@@ -1,5 +1,5 @@
 import { Logger, RandomStreamFactory, LogLine, Api, ResultDTO, SimConfigDTO, Model } from "aethon-arion-pipeline";
-import { Observable, catchError, concatMap, defer, exhaustMap, filter, finalize, ignoreElements, interval, map, merge, of, tap, throwError, retry, timer, timeout } from "rxjs";
+import { Observable, catchError, concatMap, defer, exhaustMap, filter, finalize, ignoreElements, map, merge, of, repeat, tap, throwError, retry, timer, timeout } from "rxjs";
 import { NodeConfig, validateNodeConfig } from "../interfaces/node.interfaces";
 import { Logger as TSLogger } from "tslog";
 import { machineIdSync } from "node-machine-id";
@@ -11,7 +11,7 @@ import openApi from "../../swagger/swagger.json";
 import { RunEvent, WorkerSimulationRunner } from "./simulation-runner";
 
 /** What a node process is doing (reported to the server by heartbeats). */
-export type NodeState = "idle" | "requesting" | "simulating" | "posting";
+export type NodeState = "idle" | "requesting" | "simulating" | "posting" | "backing-off";
 
 /** A node process's activity: its state, the run in progress and counters since it started. */
 export interface NodeStatus {
@@ -155,7 +155,10 @@ export class Node {
     private _saveStateSpace: boolean;
     private _requestTimeoutMs: number;
     private _postTimeoutMs: number;
-    private _loopObservable$: Observable<number>;
+    private _backoffBaseMs: number;
+    private _backoffMaxMs: number;
+    private _consecutiveErrors: number = 0;
+    private _lastRecorded: boolean = false;
     private _loopInterval: number;
     private _logger: Logger;
     private _verbose: boolean;
@@ -273,7 +276,8 @@ export class Node {
             config.simulationThread === "worker"
                 ? new WorkerSimulationRunner((level, sourceObject, message, data) => this._workerLog(level, sourceObject, message, data))
                 : null;
-        this._loopObservable$ = interval(this._loopInterval);
+        this._backoffBaseMs = config.backoffBaseMs ?? 2000;
+        this._backoffMaxMs = config.backoffMaxMs ?? 60000;
         this._log("Node initialised");
     }
 
@@ -288,7 +292,18 @@ export class Node {
      */
     start$(): Observable<boolean> {
         this._log("Starting job loop", { loopInterval: this._loopInterval, heartbeatIntervalMs: this._heartbeatIntervalMs });
-        const loop$ = this._loopObservable$.pipe(exhaustMap(() => this.runOnce$()));
+        // one job at a time: the next request follows at once after a recorded result, after loopInterval when there
+        // was no work, and after an exponential backoff with jitter after errors (so that many processes do not
+        // retry in step against a struggling server)
+        const loop$ = defer(() => this.runOnce$()).pipe(
+            repeat({
+                delay: () => {
+                    const delay = this.nextDelay();
+                    if (this._consecutiveErrors > 0) this._state = "backing-off";
+                    return timer(delay);
+                }
+            })
+        );
         if (this._heartbeatIntervalMs <= 0) return loop$;
         // heartbeats run beside the job loop (the main thread is free while a worker thread simulates)
         const heartbeats$ = timer(0, this._heartbeatIntervalMs).pipe(exhaustMap(() => this.heartbeat$()), ignoreElements());
@@ -339,6 +354,20 @@ export class Node {
         );
     }
 
+    /** Milliseconds to wait before the next job request (see start$). */
+    nextDelay(random: () => number = Math.random): number {
+        if (this._consecutiveErrors > 0) {
+            return Node.backoffDelay(this._consecutiveErrors, this._backoffBaseMs, this._backoffMaxMs, random);
+        }
+        return this._lastRecorded ? 0 : this._loopInterval;
+    }
+
+    /** Backoff after the k-th consecutive error: min(max, base x 2^(k-1)) x U(0.5, 1.5). */
+    static backoffDelay(errors: number, baseMs: number, maxMs: number, random: () => number = Math.random): number {
+        const exponential = Math.min(maxMs, baseMs * Math.pow(2, Math.max(0, errors - 1)));
+        return Math.round(exponential * (0.5 + random()));
+    }
+
     /** The node code's git commit (dist/version.txt, written by the build), or "dev" when run from source. */
     static codeVersion(file: string = path.join(__dirname, "..", "..", "version.txt")): string {
         try {
@@ -360,6 +389,7 @@ export class Node {
         this._log("Requesting job");
         this._counter = 0;
         this._state = "requesting";
+        this._lastRecorded = false;
         return this._getNext$().pipe(
             concatMap((response: SimConfigDTO) => {
                 if (response !== null && response !== undefined && response.id && response.orgConfig) {
@@ -375,6 +405,7 @@ export class Node {
                     );
                 }
                 this._log("No job received - retrying");
+                this._consecutiveErrors = 0; // the server answered
                 return of(null);
             }),
             concatMap((result: ResultDTO | null) => {
@@ -389,6 +420,8 @@ export class Node {
                     map((response: any) => {
                         this._log("Result recorded", { resultId: response?.payload?.id ?? response?.id });
                         this._completedRuns++;
+                        this._lastRecorded = true;
+                        this._consecutiveErrors = 0;
                         return true;
                     })
                 );
@@ -407,6 +440,7 @@ export class Node {
                     );
                 }
                 this._lastError = error?.message ? error.message : String(error || "Unknown error");
+                this._consecutiveErrors++;
                 this._log("Error processing job", {
                     error: this._lastError,
                     status: error?.status

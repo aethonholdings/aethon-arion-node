@@ -19,6 +19,10 @@ export interface NodeConfig {
     postTimeoutMs?: number;
     /** Where simulations run: "worker" (a worker thread, keeping the node responsive during a run) or "main" (default). */
     simulationThread?: "worker" | "main";
+    /** First backoff after an error in ms (default 2000); doubles with each consecutive error, with jitter. */
+    backoffBaseMs?: number;
+    /** Longest backoff in ms (default 60000). */
+    backoffMaxMs?: number;
     /** Heartbeat interval in ms (default 10000; 0 disables heartbeats). */
     heartbeatIntervalMs?: number;
 }
@@ -38,6 +42,9 @@ export function validateNodeConfig(config: NodeConfig): string[] {
         if (config[key] !== undefined && !(Number.isInteger(config[key]) && (config[key] as number) > 0)) {
             errors.push(`${key} must be a positive integer (ms)`);
         }
+    }
+    for (const key of ["backoffBaseMs", "backoffMaxMs"] as const) {
+        if (config[key] !== undefined && !(Number.isInteger(config[key]) && (config[key] as number) > 0)) errors.push(`${key} must be a positive integer (ms)`);
     }
     if (config.heartbeatIntervalMs !== undefined && !(Number.isInteger(config.heartbeatIntervalMs) && config.heartbeatIntervalMs >= 0)) {
         errors.push("heartbeatIntervalMs must be an integer of at least 0 (ms)");
