@@ -41,6 +41,10 @@ npm run login            # or: node dist/src/main.js login [config] [--allow-htt
 
 Keys do not expire. A key stays valid until it is revoked on the server (`npm run node:revoke <id>`) or replaced by a new `login` from the same machine.
 
+## Results the server cannot take
+
+A result that cannot be posted (server unreachable, 5xx, timeout, or the key refused) is written to `~/.arion/results` (or `ARION_NODE_RESULTS`; `resultBufferDir` in the configuration, `false` to switch off). Before it takes new work, a node process posts the buffered results, oldest first; while they cannot be posted it takes no new work and backs off. The files survive a restart, and the processes of one machine share the directory (each claims a file before posting it). A result the server refuses outright (for example 400) is moved to `rejected/` in that directory.
+
 ## Contributing
 
 Pull requests are welcome. For major changes, please open an issue first to discuss what you would like to change.

@@ -1,5 +1,5 @@
 import { Logger, RandomStreamFactory, LogLine, Api, ResultDTO, SimConfigDTO, Model } from "aethon-arion-pipeline";
-import { EMPTY, Observable, Subject, catchError, concatMap, defer, exhaustMap, filter, finalize, from, ignoreElements, map, merge, of, repeat, take, takeUntil, tap, throwError, retry, timer, timeout } from "rxjs";
+import { EMPTY, Observable, Subject, catchError, concatMap, defaultIfEmpty, defer, exhaustMap, filter, finalize, from, ignoreElements, map, merge, of, repeat, take, takeUntil, tap, throwError, retry, timer, timeout } from "rxjs";
 import { NodeConfig, validateNodeConfig } from "../interfaces/node.interfaces";
 import { Logger as TSLogger } from "tslog";
 import { machineIdSync } from "node-machine-id";
@@ -10,6 +10,7 @@ import { API, APIRequestOptions } from "aethon-api-types";
 import openApi from "../../swagger/swagger.json";
 import { RunCancelledError, RunEvent, WorkerSimulationRunner } from "./simulation-runner";
 import { spotInterruptionNotice } from "./spot-watch";
+import { ResultBuffer, defaultResultBufferDir } from "./result-buffer";
 
 /** What a node process is doing (reported to the server by heartbeats). */
 export type NodeState = "idle" | "requesting" | "simulating" | "posting" | "backing-off" | "draining";
@@ -177,6 +178,11 @@ export class Node {
     private _draining: string | null = null;
     private _stopped$ = new Subject<void>();
     private _spotCheckMs: number;
+    private _buffer: ResultBuffer | null;
+    private _recycle: string | null = null;
+    private _consecutiveFailures: number = 0;
+    private _maxConsecutiveFailures: number;
+    private _maxRssMb: number;
     private _totalRunMs: number = 0;
     private _lastError: string | null = null;
     private _startedAt: string = new Date().toISOString();
@@ -284,6 +290,10 @@ export class Node {
             config.simulationThread === "worker"
                 ? new WorkerSimulationRunner((level, sourceObject, message, data) => this._workerLog(level, sourceObject, message, data))
                 : null;
+        // results that cannot be posted are kept on disk and posted before new work is taken
+        this._buffer = config.resultBufferDir === false ? null : new ResultBuffer(config.resultBufferDir ?? defaultResultBufferDir());
+        this._maxConsecutiveFailures = config.maxConsecutiveFailures ?? 5;
+        this._maxRssMb = config.maxRssMb ?? 0;
         this._backoffBaseMs = config.backoffBaseMs ?? 2000;
         this._backoffMaxMs = config.backoffMaxMs ?? 60000;
         this._log("Node initialised");
@@ -307,6 +317,14 @@ export class Node {
             repeat({
                 delay: () => {
                     if (this._draining) return EMPTY;
+                    const problem = this.selfCheck();
+                    if (problem) {
+                        // recycle: stop here and let the process manager start a fresh process
+                        this._recycle = problem;
+                        this._draining = `Self-check: ${problem}`;
+                        this._logger.error({ sourceObject: this._name, message: "Self-check failed; stopping for a restart", data: { problem } });
+                        return EMPTY;
+                    }
                     const delay = this.nextDelay();
                     if (this._consecutiveErrors > 0) this._state = "backing-off";
                     return timer(delay).pipe(takeUntil(this._stopped$));
@@ -355,6 +373,24 @@ export class Node {
                 // best effort: the lease expires anyway
             }
         }
+    }
+
+    /**
+     * The self-check after each job: a reason to recycle the process, or null. Counts consecutive runs that failed on
+     * this machine (not server errors) and the resident memory.
+     */
+    selfCheck(rssBytes: number = process.memoryUsage().rss): string | null {
+        if (this._maxConsecutiveFailures > 0 && this._consecutiveFailures >= this._maxConsecutiveFailures) {
+            return `${this._consecutiveFailures} consecutive failed runs`;
+        }
+        const rssMb = Math.round(rssBytes / (1024 * 1024));
+        if (this._maxRssMb > 0 && rssMb > this._maxRssMb) return `resident memory ${rssMb} MB above ${this._maxRssMb} MB`;
+        return null;
+    }
+
+    /** Why the self-check stopped the node (the process should exit with code 1 and be restarted), or null. */
+    get recycle(): string | null {
+        return this._recycle;
     }
 
     /** Why the node is draining, or null. */
@@ -458,7 +494,8 @@ export class Node {
         this._counter = 0;
         this._state = "requesting";
         this._lastRecorded = false;
-        return this._getNext$().pipe(
+        return this._flushBuffer$().pipe(
+            concatMap(() => this._getNext$()),
             concatMap((response: SimConfigDTO) => {
                 if (response !== null && response !== undefined && response.id && response.orgConfig) {
                     this._log("SimConfig received", { jobId: response.id, runId: response.runId, runIndex: response.runIndex });
@@ -473,6 +510,7 @@ export class Node {
                                 return of(null);
                             }
                             this._failedRuns++;
+                            this._consecutiveFailures++;
                             this._lastError = error?.message ?? String(error);
                             return this._reportFailure$(response, error).pipe(map(() => null));
                         })
@@ -484,6 +522,7 @@ export class Node {
             }),
             concatMap((result: ResultDTO | null) => {
                 if (result === null || result === undefined) return of(false);
+                this._consecutiveFailures = 0; // the simulation ran
                 this._state = "posting";
                 this._log("Posting results", {
                     simConfigId: result.simConfigId,
@@ -491,6 +530,19 @@ export class Node {
                     payloadSizeKB: Math.round(JSON.stringify(result).length / 1024)
                 });
                 return this._postResult$(result).pipe(
+                    catchError((error) => {
+                        // the server is unreachable or refuses the node for now: the result is kept on disk and
+                        // posted before the next job (a refused result, e.g. 400, is not kept)
+                        if (this._buffer && (Node.isTransientError(error) || error?.status === 401 || error?.status === 403)) {
+                            try {
+                                const file = this._buffer.save(result);
+                                this._log("Result buffered on disk", { runId: result.runId, file, buffered: this._buffer.count() });
+                            } catch (saveError: any) {
+                                this._logger.error({ sourceObject: this._name, message: "Could not buffer result", data: { runId: result.runId, error: saveError?.message } });
+                            }
+                        }
+                        return throwError(() => error);
+                    }),
                     map((response: any) => {
                         this._log("Result recorded", { resultId: response?.payload?.id ?? response?.id });
                         this._completedRuns++;
@@ -704,6 +756,48 @@ export class Node {
                 return throwError(() => error);
             })
         );
+    }
+
+    /**
+     * Posts the buffered results, oldest first. Errors (and so holds back new work) while the server cannot take
+     * them; a result the server refuses outright is set aside, not retried.
+     */
+    private _flushBuffer$(): Observable<void> {
+        const buffer = this._buffer;
+        if (!buffer) return of(undefined);
+        return defer(() => {
+            const names = buffer.pending();
+            if (names.length === 0) return of(undefined);
+            this._state = "posting";
+            this._log("Posting buffered results", { buffered: names.length });
+            return from(names).pipe(
+                concatMap((name) => {
+                    const claimed = buffer.claim(name);
+                    if (!claimed) return of(undefined); // taken by another process
+                    return this._postResult$(claimed.result).pipe(
+                        map(() => {
+                            buffer.done(claimed);
+                            this._log("Buffered result recorded", { runId: claimed.result.runId });
+                        }),
+                        catchError((error) => {
+                            if (Node.isTransientError(error) || error?.status === 401 || error?.status === 403 || error?.status === 408) {
+                                buffer.release(claimed);
+                                return throwError(() => error);
+                            }
+                            buffer.reject(claimed);
+                            this._logger.warning({
+                                sourceObject: this._name,
+                                message: "Buffered result refused by the server; moved to rejected/",
+                                data: { runId: claimed.result.runId, status: error?.status }
+                            });
+                            return of(undefined);
+                        })
+                    );
+                }),
+                ignoreElements(),
+                defaultIfEmpty(undefined)
+            ) as Observable<void>;
+        });
     }
 
     /** Reports a failed run to the server (best effort: a report that cannot be delivered is only logged). */

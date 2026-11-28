@@ -67,10 +67,20 @@ async function main(): Promise<void> {
             process.exit(1);
         },
         complete: () => {
-            // the job loop completes only when the node drains (e.g. a Spot interruption notice)
+            // the job loop completes only when the node drains
+            if (node.recycle) {
+                // self-check failed: exit with an error so that pm2 starts a fresh process (pm2 counts the restarts,
+                // and deploy/aws/node-health.sh marks an instance whose processes keep restarting unhealthy)
+                node.getLogger().error({ sourceObject: "Main", message: "Stopping for a restart", data: { reason: node.recycle } });
+                void node.close().finally(() => process.exit(1));
+                return;
+            }
             if (node.draining) {
-                node.getLogger().info({ sourceObject: "Main", message: "Drained", data: { reason: node.draining } });
-                void node.close().finally(() => process.exit(0));
+                // Spot interruption: the instance stops within two minutes. Exiting would only make pm2 start a new
+                // process that takes a job it cannot finish, so the process stays, idle, until the instance stops.
+                node.getLogger().info({ sourceObject: "Main", message: "Drained; idle until the instance stops", data: { reason: node.draining } });
+                void node.close();
+                setInterval(() => undefined, 60 * 60 * 1000);
                 return;
             }
             node.getLogger().error({ sourceObject: "Main", message: "Node job loop ended unexpectedly" });

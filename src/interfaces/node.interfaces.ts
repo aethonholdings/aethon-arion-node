@@ -27,6 +27,19 @@ export interface NodeConfig {
     spotCheckIntervalMs?: number;
     /** Heartbeat interval in ms (default 10000; 0 disables heartbeats). */
     heartbeatIntervalMs?: number;
+    /**
+     * Directory for results that could not be posted (default ARION_NODE_RESULTS, else ~/.arion/results); they are
+     * posted before new work is taken. false disables the buffer.
+     */
+    resultBufferDir?: string | false;
+    /**
+     * Self-check: the process stops (exit code 1, for pm2 to restart it) after this many consecutive failed runs
+     * (default 5; 0 disables). Only runs that fail on this machine count, not server errors, so that a server
+     * outage does not recycle the fleet.
+     */
+    maxConsecutiveFailures?: number;
+    /** Self-check: the process stops (exit code 1) when its resident memory exceeds this many MB after a run (default 0: off). */
+    maxRssMb?: number;
 }
 
 /** Validates a node configuration and returns the list of problems found (empty when valid). */
@@ -44,6 +57,10 @@ export function validateNodeConfig(config: NodeConfig): string[] {
         if (config[key] !== undefined && !(Number.isInteger(config[key]) && (config[key] as number) > 0)) {
             errors.push(`${key} must be a positive integer (ms)`);
         }
+    }
+    for (const key of ["maxConsecutiveFailures", "maxRssMb"] as const) {
+        const value = config[key];
+        if (value !== undefined && !(Number.isInteger(value) && value >= 0)) errors.push(`${key} must be a non-negative integer`);
     }
     for (const key of ["backoffBaseMs", "backoffMaxMs"] as const) {
         if (config[key] !== undefined && !(Number.isInteger(config[key]) && (config[key] as number) > 0)) errors.push(`${key} must be a positive integer (ms)`);
